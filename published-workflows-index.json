@@ -1,13 +1,6 @@
 {
-  "generatedAt": "2026-03-28T11:20:27.022Z",
+  "generatedAt": "2026-03-28T11:25:04.758Z",
   "source": "n8n automated weekly backup",
-  "workflowCount": 1,
-  "workflows": [
-    {
-      "workflowId": "unnamed-workflow",
-      "workflowName": "workflow.json",
-      "folder": "workflows/workflowjson",
-      "file": "workflows/workflowjson/workflow.json"
-    }
-  ]
+  "workflowCount": 0,
+  "workflows": []
 }
