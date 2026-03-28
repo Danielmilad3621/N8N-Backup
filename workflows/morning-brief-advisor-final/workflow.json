@@ -1,0 +1,351 @@
+{
+  "updatedAt": "2026-03-10T00:00:08.309Z",
+  "createdAt": "2026-02-25T17:39:14.019Z",
+  "id": "yxhElU3MT4cxZJWv",
+  "name": "Morning Brief Advisor Final",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        3312,
+        2416
+      ],
+      "id": "[REDACTED]",
+      "name": "Daily 7 AM Trigger1"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "task": "[REDACTED]",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.googleTasks",
+      "typeVersion": 1,
+      "position": [
+        3536,
+        2512
+      ],
+      "id": "[REDACTED]",
+      "name": "Get many tasks",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "[REDACTED]",
+          "mode": "list",
+          "cachedResultName": "Task list",
+          "cachedResultUrl": "[REDACTED]"
+        },
+        "returnAll": true,
+        "simple": false,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        3712,
+        2512
+      ],
+      "id": "[REDACTED]",
+      "name": "Get Notion Task List1",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "[REDACTED]",
+          "mode": "list",
+          "cachedResultName": "My projects",
+          "cachedResultUrl": "[REDACTED]"
+        },
+        "returnAll": true,
+        "simple": false,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        3904,
+        2512
+      ],
+      "id": "[REDACTED]",
+      "name": "Get Notion Projects1",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Core Processing: Normalize, Match, Dedup, Infer Projects, Diff ===\nconst googleData = $('Get many tasks').all();\nconst notionTasksData = $('Get Notion Task List1').all();\nconst notionProjectsData = $('Get Notion Projects1').all();\n\nif (!googleData || googleData.length === 0) console.log('Warning: No Google Tasks found');\nif (!notionTasksData || notionTasksData.length === 0) console.log('Warning: No Notion tasks found');\nif (!notionProjectsData || notionProjectsData.length === 0) console.log('Warning: No Notion projects found');\n\nconst google = googleData.map(i => i.json).filter(Boolean);\nconst notionTasks = notionTasksData.map(i => i.json).filter(Boolean);\nconst notionProjects = notionProjectsData.map(i => i.json).filter(Boolean);\nconst TZ = 'Europe/Dublin';\nconst now = new Date();\nconst isoDate = now.toISOString().slice(0, 10);\n\n// --- Normalization helpers ---\nfunction norm(s) {\n  if (!s) return '';\n  let t = String(s).normalize('NFKC').toLowerCase();\n  t = t.replace(/[\\u{1F600}-\\u{1F64F}\\u{1F300}-\\u{1F5FF}\\u{1F680}-\\u{1F6FF}\\u{1F1E0}-\\u{1F1FF}\\u{2600}-\\u{26FF}\\u{2700}-\\u{27BF}]/gu, '');\n  t = t.replace(/[^\\w\\s]/g, ' ').replace(/\\s+/g, ' ').trim();\n  return t;\n}\nfunction toks(s) { return norm(s).split(/\\s+/).filter(Boolean); }\nconst STOP = new Set('the a an is are was were be been have has had do does did will would shall should may might can could to of in for on with at by from as and but or not this that it its i me my we our you your'.split(' '));\nfunction cleanToks(s) { return toks(s).filter(t => !STOP.has(t)); }\nconst GENERIC = new Set(['email', 'call', 'follow up', 'followup', 'admin', 'review', 'check', 'update', 'meeting', 'task', 'todo', 'reminder']);\nfunction isWeak(n) { return n.length < 8 || GENERIC.has(n); }\n\n// --- Notion helpers ---\nfunction first(...v) { for (const x of v) if (x != null && `${x}`.trim()) return x; return null; }\nfunction nTitle(p) {\n  if (typeof p.Name === 'string') return p.Name;\n  if (typeof p.name === 'string') return p.name;\n  if (typeof p.title === 'string') return p.title;\n  for (const v of Object.values(p.properties || {})) {\n    if (!v) continue;\n    const a = v.title || (v.type === 'title' ? v.title : null);\n    if (Array.isArray(a) && a.length) return a.map(t => t.plain_text || t.text?.content || '').join('').trim();\n  }\n  return '';\n}\nfunction nDesc(p) {\n  const props = p.properties || {};\n  for (const k of ['Description', 'description', 'Notes', 'notes', 'Summary', 'Details']) {\n    const v = props[k];\n    if (v?.type === 'rich_text' && Array.isArray(v.rich_text))\n      return v.rich_text.map(t => t.plain_text || '').join('').trim();\n    if (typeof p[k] === 'string') return p[k];\n  }\n  return '';\n}\nfunction nStatus(p) {\n  const props = p.properties || {};\n  const s = props.Status || props.status;\n  if (!s) return first(p.Status, p.status);\n  if (s.type === 'status') return s.status?.name || null;\n  if (s.type === 'select') return s.select?.name || null;\n  return typeof s === 'string' ? s : null;\n}\nfunction nDue(p) {\n  const props = p.properties || {};\n  for (const k of ['Due', 'Due Date', 'Due date', 'Date', 'Deadline']) {\n    const v = props[k];\n    if (v?.type === 'date') return v.date?.start || null;\n    if (v?.date?.start) return v.date.start;\n    if (typeof p[k] === 'string') return p[k];\n    if (p[k]?.start) return p[k].start;\n  }\n  return null;\n}\nfunction nRelIds(p) {\n  const props = p.properties || {};\n  for (const k of ['Project', 'Projects', 'project', 'projects']) {\n    const v = props[k];\n    if (v?.type === 'relation' && Array.isArray(v.relation)) return v.relation.map(r => r.id).filter(Boolean);\n    if (Array.isArray(p[k])) return p[k].map(r => r.id || r).filter(Boolean);\n  }\n  for (const v of Object.values(props)) {\n    if (v?.type === 'relation' && Array.isArray(v.relation)) return v.relation.map(r => r.id).filter(Boolean);\n  }\n  return [];\n}\nfunction isDone(s) { return s ? ['done', 'completed', 'complete', 'closed', 'cancelled', 'canceled'].includes(String(s).toLowerCase()) : false; }\nfunction dateKey(iso) { if (!iso) return null; const d = new Date(iso); return isNaN(d) ? null : d.toISOString().slice(0, 10); }\n\n// --- Build canonical projects ---\nconst projects = notionProjects.map(p => {\n  const pid = p.id || p.pageId; const title = nTitle(p) || ''; const desc = nDesc(p);\n  const status = nStatus(p); const tn = norm(title);\n  return {\n    id: `notion:${pid}`, sid: pid, title, desc, status: isDone(status) ? 'done' : (status || 'active'),\n    url: p.url || null, tn, txtToks: cleanToks(title + ' ' + desc), weak: isWeak(tn)\n  };\n});\nconst pMap = new Map(); for (const p of projects) pMap.set(p.sid, p);\n\n// --- Build canonical tasks ---\nconst allTasks = [];\nfor (const t of google) {\n  const title = t.title || ''; const notes = t.notes || ''; const tn = norm(title);\n  allTasks.push({\n    id: `gtasks:${t.id}`, src: 'gtasks', sid: t.id, title, notes, tn,\n    txtToks: cleanToks(title + ' ' + notes), weak: isWeak(tn),\n    status: t.status === 'completed' ? 'completed' : 'open',\n    due: dateKey(t.due), dueRaw: t.due || null,\n    completedAt: t.completed || null, updatedAt: t.updated || null,\n    projExplicit: [], projInferred: [], url: t.webViewLink || null\n  });\n}\nfor (const nt of notionTasks) {\n  const tid = nt.id || nt.pageId; const title = nTitle(nt) || '';\n  const notes = first(nt.Notes, nt.notes, nt.Description, nt.description, '') || '';\n  const desc = nDesc(nt); const full = notes || desc; const status = nStatus(nt);\n  const relIds = nRelIds(nt); const tn = norm(title);\n  allTasks.push({\n    id: `notion:${tid}`, src: 'notion', sid: tid, title, notes: full, tn,\n    txtToks: cleanToks(title + ' ' + full), weak: isWeak(tn),\n    status: isDone(status) ? 'completed' : (status || 'open'),\n    due: dateKey(nDue(nt)), dueRaw: nDue(nt),\n    completedAt: isDone(status) ? (nt.last_edited_time || null) : null,\n    updatedAt: nt.last_edited_time || null,\n    projExplicit: relIds.map(id => `notion:${id}`), projInferred: [], url: nt.url || null\n  });\n}\nconst openTasks = allTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled');\n\n// --- Matching: Jaccard token similarity ---\nfunction jaccard(a, b) {\n  const sa = new Set(a); const sb = new Set(b);\n  const inter = [...sa].filter(x => sb.has(x)).length;\n  const union = new Set([...sa, ...sb]).size;\n  return union === 0 ? 0 : inter / union;\n}\nfunction dueSim(a, b) {\n  if (!a || !b) return 0;\n  const da = new Date(a); const db = new Date(b);\n  if (isNaN(da) || isNaN(db)) return 0;\n  const delta = Math.abs((da - db) / (86400000));\n  return Math.max(0, 1 - Math.min(delta, 14) / 14);\n}\n\n// Block by first 3 tokens for efficiency\nfunction blockKey(t) { return t.txtToks.slice(0, 3).join(' '); }\nconst blocks = {};\nfor (const t of openTasks) {\n  const k = blockKey(t); if (!blocks[k]) blocks[k] = []; blocks[k].push(t);\n}\n\n// Find duplicates (within + cross-source)\nconst matches = [];\nconst seen = new Set();\nfor (const group of Object.values(blocks)) {\n  for (let i = 0; i < group.length; i++) {\n    for (let j = i + 1; j < group.length; j++) {\n      const a = group[i]; const b = group[j];\n      const key = [a.id, b.id].sort().join('|');\n      if (seen.has(key)) continue; seen.add(key);\n      const titleSim = jaccard(a.txtToks, b.txtToks);\n      const ds = dueSim(a.due, b.due);\n      let score = 0.65 * titleSim + 0.35 * ds;\n      if (a.weak || b.weak) score -= 0.08;\n      score = Math.max(0, Math.min(1, score));\n      let conf = 'none';\n      if (score >= 0.85 && titleSim >= 0.80) conf = 'high';\n      else if (score >= 0.70) conf = 'possible';\n      else if (score >= 0.55) conf = 'related';\n      if (conf !== 'none') {\n        const crossSystem = a.src !== b.src;\n        matches.push({\n          aId: a.id, bId: b.id, aTitle: a.title, bTitle: b.title,\n          type: crossSystem ? 'cross' : 'same', score: +score.toFixed(2), conf,\n          rationale: [`title_jaccard=${titleSim.toFixed(2)}`, `due_sim=${ds.toFixed(2)}`]\n        });\n      }\n    }\n  }\n}\n\n// --- Project inference for unassigned tasks ---\nconst unassigned = openTasks.filter(t => t.projExplicit.length === 0);\nconst activeProjects = projects.filter(p => p.status !== 'done');\nfor (const t of unassigned) {\n  if (t.txtToks.length === 0) continue;\n  const scored = activeProjects.map(p => ({ pid: p.id, title: p.title, score: jaccard(t.txtToks, p.txtToks) }))\n    .filter(s => s.score >= 0.25).sort((a, b) => b.score - a.score);\n  if (scored.length && scored[0].score >= 0.35) {\n    const margin = scored.length > 1 ? scored[0].score - scored[1].score : scored[0].score;\n    if (margin >= 0.07 || scored[0].score >= 0.60)\n      t.projInferred = scored.slice(0, 3).map(s => ({ pid: s.pid, title: s.title, score: +s.score.toFixed(2) }));\n  }\n}\n\n// --- Diff vs yesterday (via n8n static data) ---\nconst staticData = $getWorkflowStaticData('global');\nconst yesterday = staticData.snapshot || { tasks: {}, date: null };\nconst todaySnap = {};\nfor (const t of allTasks) todaySnap[t.id] = { title: t.title, status: t.status, due: t.due };\n\nconst diff = { newTasks: [], completedTasks: [], dueChanges: [], removedTasks: [] };\nfor (const t of allTasks) {\n  const prev = yesterday.tasks[t.id];\n  if (!prev) diff.newTasks.push({ id: t.id, title: t.title, src: t.src });\n  else {\n    if (t.status === 'completed' && prev.status !== 'completed')\n      diff.completedTasks.push({ id: t.id, title: t.title, src: t.src });\n    if (t.due && prev.due && t.due !== prev.due)\n      diff.dueChanges.push({ id: t.id, title: t.title, oldDue: prev.due, newDue: t.due });\n  }\n}\nfor (const [id, prev] of Object.entries(yesterday.tasks)) {\n  if (!todaySnap[id]) diff.removedTasks.push({ id, title: prev.title });\n}\n\n// Save today's snapshot\nstaticData.snapshot = { tasks: todaySnap, date: isoDate };\n\n// --- Categorize by urgency ---\nconst overdue = openTasks.filter(t => t.due && t.due < isoDate).sort((a, b) => a.due.localeCompare(b.due));\nconst dueToday = openTasks.filter(t => t.due === isoDate);\nconst dueSoon = openTasks.filter(t => { if (!t.due || t.due <= isoDate) return false; const d = new Date(t.due); const s = new Date(isoDate); return (d - s) / (86400000) <= 7; }).sort((a, b) => a.due.localeCompare(b.due));\n\n// --- Project-centric view ---\nconst projView = {};\nfor (const t of openTasks) {\n  const pids = t.projExplicit.length ? t.projExplicit : t.projInferred.map(i => i.pid);\n  if (pids.length === 0) continue;\n  for (const pid of pids) {\n    if (!projView[pid]) {\n      const p = pMap.get(pid.replace('notion:', ''));\n      projView[pid] = { title: p ? p.title : pid, tasks: [] };\n    }\n    projView[pid].tasks.push({ id: t.id, title: t.title, due: t.due, status: t.status, inferred: t.projExplicit.length === 0 });\n  }\n}\n\n// --- Counts ---\nconst counts = {\n  totalProjects: projects.length, activeProjects: activeProjects.length,\n  totalTasks: allTasks.length, openTasks: openTasks.length,\n  googleTotal: google.length, notionTotal: notionTasks.length,\n  overdue: overdue.length, dueToday: dueToday.length, dueSoon: dueSoon.length,\n  duplicatesHigh: matches.filter(m => m.conf === 'high').length,\n  duplicatesPossible: matches.filter(m => m.conf === 'possible').length,\n  unassigned: unassigned.filter(t => t.projInferred.length === 0).length,\n  suggestedLinks: unassigned.filter(t => t.projInferred.length > 0).length,\n  diffNew: diff.newTasks.length, diffCompleted: diff.completedTasks.length,\n};\n\nreturn [{\n  json: {\n    isoDate, tz: TZ, counts, projects, openTasks, overdue, dueToday, dueSoon,\n    matches, unassigned: unassigned.filter(t => t.projInferred.length > 0),\n    projView, diff, yesterdayDate: yesterday.date,\n    sourceHealth: { notion: notionTasks.length > 0 ? 'ok' : 'empty', google: google.length > 0 ? 'ok' : 'empty', projects: notionProjects.length > 0 ? 'ok' : 'empty' }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4080,
+        2512
+      ],
+      "id": "[REDACTED]",
+      "name": "Core Processing1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Build LLM Prompt for Executive Summary ===\nconst d = $json;\nconst counts = d.counts;\nconst overdue = d.overdue || [];\nconst dueToday = d.dueToday || [];\nconst dueSoon = d.dueSoon || [];\nconst matches = d.matches || [];\nconst unassigned = d.unassigned || [];\nconst diff = d.diff || {};\nconst projView = d.projView || {};\n\nfunction safeStr(x, max = 100) {\n    const s = (x ?? '').toString().replace(/\\s+/g, ' ').trim();\n    return s.length > max ? s.slice(0, max - 1) + '…' : s;\n}\n\n// Build compact tables for LLM context\nlet ctx = '';\nctx += `Date: ${d.isoDate} (${d.tz})\\n`;\nctx += `Open tasks: ${counts.openTasks} | Overdue: ${counts.overdue} | Due today: ${counts.dueToday} | Due soon (7d): ${counts.dueSoon}\\n`;\nctx += `Projects: ${counts.activeProjects} active | Duplicates: ${counts.duplicatesHigh} high, ${counts.duplicatesPossible} possible\\n`;\nctx += `Changes since ${d.yesterdayDate || 'N/A'}: ${counts.diffNew} new, ${counts.diffCompleted} completed\\n\\n`;\n\nif (overdue.length) {\n    ctx += `OVERDUE TASKS:\\n`;\n    overdue.slice(0, 15).forEach(t => { ctx += `- [${t.src}] ${safeStr(t.title, 80)} (due: ${t.due})\\n`; });\n    ctx += '\\n';\n}\nif (dueToday.length) {\n    ctx += `DUE TODAY:\\n`;\n    dueToday.slice(0, 10).forEach(t => { ctx += `- [${t.src}] ${safeStr(t.title, 80)}\\n`; });\n    ctx += '\\n';\n}\nif (dueSoon.length) {\n    ctx += `DUE SOON (next 7 days):\\n`;\n    dueSoon.slice(0, 15).forEach(t => { ctx += `- [${t.src}] ${safeStr(t.title, 80)} (due: ${t.due})\\n`; });\n    ctx += '\\n';\n}\n\nconst projKeys = Object.keys(projView);\nif (projKeys.length) {\n    ctx += `PROJECTS WITH OPEN TASKS:\\n`;\n    projKeys.slice(0, 10).forEach(k => {\n        const pv = projView[k];\n        ctx += `  ${pv.title}: ${pv.tasks.length} tasks\\n`;\n        pv.tasks.slice(0, 5).forEach(t => { ctx += `    - ${safeStr(t.title, 60)} ${t.due ? '(due:' + t.due + ')' : ''} ${t.inferred ? '[INFERRED LINK]' : ''}\\n`; });\n    });\n    ctx += '\\n';\n}\n\nif (matches.length) {\n    ctx += `POTENTIAL DUPLICATES:\\n`;\n    matches.slice(0, 10).forEach(m => {\n        ctx += `- [${m.conf}] \"${safeStr(m.aTitle, 50)}\" ↔ \"${safeStr(m.bTitle, 50)}\" (score: ${m.score}, ${m.type})\\n`;\n    });\n    ctx += '\\n';\n}\n\nconst prompt = `You are a productivity advisor. You MUST respond with ONLY valid JSON, no other text.\\n\\nINPUT DATA:\\n${ctx}\\n\\nRespond with ONLY this JSON structure (no markdown, no explanations):\\n{\\n  \"executiveSummary\": [\"brief point 1\", \"brief point 2\"],\\n  \"topPriorities\": [\\n    {\"title\":\"task name\",\"reason\":\"why urgent\",\"estimatedMinutes\":30,\"urgency\":\"high\"}\\n  ],\\n  \"projectRisks\": [\\n    {\"project\":\"project name\",\"risk\":\"what's wrong\",\"suggestion\":\"how to fix\"}\\n  ],\\n  \"suggestedActions\": [\"action 1\", \"action 2\"],\\n  \"notes\": [\"any other notes\"]\\n}`;\n\nreturn [{ json: { ...d, llmPrompt: prompt } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4272,
+        2512
+      ],
+      "id": "[REDACTED]",
+      "name": "Build LLM Prompt1"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "[REDACTED]",
+          "mode": "list",
+          "cachedResultName": "qwen2.5:1.5b"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.llmPrompt }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.ollama",
+      "typeVersion": 1,
+      "position": [
+        4400,
+        2528
+      ],
+      "id": "[REDACTED]",
+      "name": "Ollama: Morning Brief1",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Robust LLM JSON Parser ===\nfunction extractFirstJsonObject(text) {\n    if (!text) return null;\n    const s = String(text);\n    const firstBrace = s.indexOf('{');\n    if (firstBrace === -1) return null;\n    let depth = 0, inStr = false, esc = false;\n    for (let i = firstBrace; i < s.length; i++) {\n        const ch = s[i];\n        if (inStr) {\n            if (esc) { esc = false; continue; }\n            if (ch === '\\\\') { esc = true; continue; }\n            if (ch === '\"') { inStr = false; continue; }\n            continue;\n        } else {\n            if (ch === '\"') { inStr = true; continue; }\n            if (ch === '{') depth++;\n            if (ch === '}') depth--;\n            if (depth === 0) return s.slice(firstBrace, i + 1);\n        }\n    }\n    return null;\n}\n\nconst raw = $json?.response ?? $json?.text ?? $json?.content ?? $json?.message ?? ($json?.data ? JSON.stringify($json.data) : null) ?? JSON.stringify($json);\n\nlet parsed = null, parseError = null;\ntry { parsed = JSON.parse(raw); } catch (e1) {\n    try {\n        const candidate = extractFirstJsonObject(raw);\n        if (!candidate) throw new Error('No JSON object found in LLM output');\n        parsed = JSON.parse(candidate);\n    } catch (e2) { parseError = e2.message; }\n}\n\n// Pass through all upstream data\nconst upstream = $('Build LLM Prompt1').first()?.json || {};\nreturn [{ json: { ...upstream, llmRaw: String(raw), llmParsed: parsed, llmParseOk: !!parsed, llmParseError: parseError } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4688,
+        2512
+      ],
+      "id": "[REDACTED]",
+      "name": "Parse LLM Response1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Build Morning Brief Email (HTML + plain text) ===\nconst d = $json;\nconst openTasks = d.openTasks || [];\nconst counts = d.counts || {};\nconst overdue = d.overdue || [];\nconst dueToday = d.dueToday || [];\nconst dueSoon = d.dueSoon || [];\nconst matches = d.matches || [];\nconst unassigned = d.unassigned || [];\nconst projView = d.projView || {};\nconst diff = d.diff || {};\nconst ok = d.llmParseOk;\nconst llm = d.llmParsed || {};\nconst isoDate = d.isoDate;\nconst tz = d.tz || 'Europe/Dublin';\nconst sourceHealth = d.sourceHealth || {};\n\nfunction esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }\nfunction safeStr(x, max = 100) { const s = (x ?? '').toString().replace(/\\s+/g, ' ').trim(); return s.length > max ? s.slice(0, max - 1) + '…' : s; }\nfunction normTitle(s) { return String(s ?? '').toLowerCase().replace(/[^\\w\\s]/g, ' ').replace(/\\s+/g, ' ').trim(); }\n\n// Build URL lookup map from openTasks by normalized title\nconst taskUrlMap = {};\nfor (const t of openTasks) {\n    if (t.url) taskUrlMap[normTitle(t.title)] = t.url;\n}\n\n// LLM data with fallbacks\nconst execSummary = ok && Array.isArray(llm.executiveSummary) ? llm.executiveSummary : [`${counts.openTasks || 0} open tasks. ${counts.overdue || 0} overdue.`];\nconst topPriorities = ok && Array.isArray(llm.topPriorities) ? llm.topPriorities : overdue.slice(0, 5).map(t => ({ title: t.title, reason: 'Overdue', estimatedMinutes: null, urgency: 'high' }));\nconst projectRisks = ok && Array.isArray(llm.projectRisks) ? llm.projectRisks : [];\nconst suggestedActions = ok && Array.isArray(llm.suggestedActions) ? llm.suggestedActions : [];\nconst notes = ok && Array.isArray(llm.notes) ? llm.notes : [];\nif (!ok) notes.unshift('LLM output could not be parsed: ' + (d.llmParseError || 'unknown error'));\n\nconst subject = `Morning Brief — ${isoDate} (open: ${counts.openTasks || 0}, overdue: ${counts.overdue || 0})`;\n\n// ===================== PLAIN TEXT =====================\nlet text = '';\ntext += `Morning Brief — ${isoDate} (${tz})\\n${'='.repeat(52)}\\n\\n`;\n\ntext += `EXECUTIVE SUMMARY\\n`;\nexecSummary.forEach(b => { text += `• ${b}\\n`; }); text += '\\n';\n\ntext += `DASHBOARD: Open ${counts.openTasks || 0} | Overdue ${counts.overdue || 0} | Due today ${counts.dueToday || 0} | Due soon ${counts.dueSoon || 0}\\n`;\ntext += `Projects: ${counts.activeProjects || 0} active | Duplicates: ${counts.duplicatesHigh || 0} high, ${counts.duplicatesPossible || 0} possible\\n`;\ntext += `Changes since ${d.yesterdayDate || 'N/A'}: +${counts.diffNew || 0} new, ✓${counts.diffCompleted || 0} completed\\n\\n`;\n\nif (topPriorities.length) {\n    text += `PROJECT TOP PRIORITIES\\n`;\n    topPriorities.forEach((t, i) => {\n        const tUrl = taskUrlMap[normTitle(t.title)] || '';\n        text += `${i + 1}. ${t.title} [${t.urgency || ''}] ~${t.estimatedMinutes || '?'}min${tUrl ? ' ' + tUrl : ''}\\n`;\n        if (t.reason) text += `   ${t.reason}\\n`;\n    }); text += '\\n';\n}\n\nif (overdue.length) {\n    text += `OVERDUE (${overdue.length})\\n`;\n    overdue.forEach(t => { text += `- ${t.title} [${t.src}] due: ${t.due}\\n`; }); text += '\\n';\n}\n\nconst projKeys = Object.keys(projView);\nif (projKeys.length) {\n    text += `PROJECT VIEW\\n`;\n    projKeys.forEach(k => {\n        const pv = projView[k];\n        text += `  ${pv.title} (${pv.tasks.length} tasks)\\n`;\n        pv.tasks.slice(0, 5).forEach(t => { text += `    - ${t.title}${t.due ? ' due:' + t.due : ''}${t.inferred ? ' [inferred]' : ''}\\n`; });\n    }); text += '\\n';\n}\n\nif (unassigned.length) {\n    text += `UNASSIGNED TASKS WITH SUGGESTED PROJECTS\\n`;\n    unassigned.forEach(t => {\n        text += `- ${t.title} → suggestion: ${t.projInferred.map(p => p.title + '(' + p.score + ')').join(', ')}\\n`;\n    }); text += '\\n';\n}\n\nif (matches.length) {\n    text += `POTENTIAL DUPLICATES\\n`;\n    matches.forEach(m => { text += `- [${m.conf}] \"${m.aTitle}\" ↔ \"${m.bTitle}\" (score:${m.score}, ${m.type})\\n`; });\n    text += '\\n';\n}\n\nconst diffNew = diff.newTasks || []; const diffDone = diff.completedTasks || [];\nconst diffDue = diff.dueChanges || []; const diffRem = diff.removedTasks || [];\nif (diffNew.length || diffDone.length || diffDue.length || diffRem.length) {\n    text += `CHANGES SINCE ${d.yesterdayDate || 'YESTERDAY'}\\n`;\n    diffNew.forEach(t => { text += `  + NEW: ${t.title} [${t.src}]\\n`; });\n    diffDone.forEach(t => { text += `  ✓ DONE: ${t.title} [${t.src}]\\n`; });\n    diffDue.forEach(t => { text += `  ⇄ DUE CHANGED: ${t.title} (${t.oldDue} → ${t.newDue})\\n`; });\n    diffRem.forEach(t => { text += `  - REMOVED: ${t.title}\\n`; });\n    text += '\\n';\n}\n\nif (suggestedActions.length) {\n    text += `SUGGESTED ACTIONS\\n`;\n    suggestedActions.forEach(a => { text += `☐ ${a}\\n`; }); text += '\\n';\n}\n\n// Machine-readable appendix\nconst appendix = JSON.stringify({ run_id: isoDate, timezone: tz, counts, duplicates: { high: counts.duplicatesHigh, possible: counts.duplicatesPossible }, missing_links: counts.suggestedLinks, source_health: sourceHealth });\ntext += `---\\nMACHINE-READABLE: ${appendix}\\n`;\n\n// ===================== HTML =====================\nfunction chip(label, bg = '#1f2a44') {\n    return `<span style=\"display:inline-block;padding:2px 10px;border-radius:999px;background:${bg};border:1px solid #2a3a64;color:#e8eefc;font-size:12px;line-height:18px;\">${esc(label)}</span>`;\n}\nfunction metricCard(label, value, accent = '#e8eefc') {\n    return `<td style=\"padding:6px;vertical-align:top;\"><div style=\"background:#111827;border:1px solid #223055;border-radius:14px;padding:12px;\"><div style=\"color:#9fb0d0;font-size:12px;letter-spacing:.2px;\">${esc(label)}</div><div style=\"color:${accent};font-size:20px;font-weight:700;margin-top:6px;\">${esc(String(value))}</div></div></td>`;\n}\nfunction section(title, content) {\n    return `<div style=\"margin-top:18px;\"><div style=\"font-size:16px;font-weight:900;color:#e8eefc;margin-bottom:8px;\">${esc(title)}</div>${content}</div>`;\n}\nfunction taskRow(t, extra = '') {\n    const due = t.due ? chip(`Due ${esc(t.due)}`) : '';\n    const src = chip(t.src || '');\n    const urlBtn = t.url ? ` <a href=\"${esc(t.url)}\" style=\"color:#60a5fa;font-size:12px;text-decoration:none;\">Open →</a>` : '';\n    return `<div style=\"background:#0f172a;border:1px solid #223055;border-radius:12px;padding:10px 12px;margin-top:6px;\"><div style=\"display:flex;align-items:center;gap:6px;flex-wrap:wrap;\">${src} ${due} ${extra}</div><div style=\"color:#e8eefc;font-size:14px;font-weight:700;margin-top:6px;\">${esc(safeStr(t.title, 80))}${urlBtn}</div></div>`;\n}\n\n// Source health banner\nlet healthBanner = '';\nconst unhealthy = Object.entries(sourceHealth).filter(([, v]) => v !== 'ok');\nif (unhealthy.length) {\n    healthBanner = `<div style=\"background:#3a1f20;border:1px solid #6b2020;border-radius:14px;padding:12px 14px;margin-top:12px;color:#fca5a5;font-weight:700;\">⚠ Source issues: ${unhealthy.map(([k, v]) => esc(k) + ': ' + esc(v)).join(', ')}</div>`;\n}\n\nlet html = `<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Morning Brief</title></head>`;\nhtml += `<body style=\"margin:0;padding:0;background:#0b1020;color:#e8eefc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;\">`;\nhtml += `<div style=\"display:none;max-height:0;overflow:hidden;opacity:0;\">Morning Brief — ${esc(isoDate)}</div>`;\nhtml += `<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;background:#0b1020;\"><tr><td align=\"center\" style=\"padding:22px 10px;\">`;\nhtml += `<table role=\"presentation\" width=\"640\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;max-width:640px;width:100%;\"><tr><td style=\"background:#0f172a;border:1px solid #223055;border-radius:18px;padding:18px;\">`;\n\n// Header\nhtml += `<div style=\"font-size:12px;color:#9fb0d0;letter-spacing:.2px;\">Morning Brief</div>`;\nhtml += `<div style=\"font-size:22px;font-weight:900;color:#e8eefc;margin-top:6px;\">Your tasks for today</div>`;\nhtml += `<div style=\"font-size:13px;color:#9fb0d0;margin-top:6px;\">${esc(isoDate)} · ${esc(tz)}</div>`;\nhtml += healthBanner;\n\n// Executive summary\nif (execSummary.length) {\n    html += section('Executive Summary', `<ul style=\"margin:4px 0 0 18px;padding:0;color:#c8d4f0;\">${execSummary.map(b => `<li style=\"margin:4px 0;line-height:18px;\">${esc(b)}</li>`).join('')}</ul>`);\n}\n\n// Metric cards\nhtml += `<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;margin-top:14px;\">`;\nhtml += `<tr>${metricCard('Open tasks', counts.openTasks || 0)}${metricCard('Overdue', counts.overdue || 0, '#fca5a5')}</tr>`;\nhtml += `<tr>${metricCard('Due today', counts.dueToday || 0, '#fbbf24')}${metricCard('Due soon (7d)', counts.dueSoon || 0)}</tr>`;\nhtml += `<tr>${metricCard('Duplicates (high)', counts.duplicatesHigh || 0)}${metricCard('Suggested links', counts.suggestedLinks || 0)}</tr>`;\nhtml += `</table>`;\n\n// Top priorities\nif (topPriorities.length) {\n    let pHtml = '';\n    topPriorities.forEach((t, i) => {\n        const urgColor = t.urgency === 'critical' ? '#ef4444' : t.urgency === 'high' ? '#f59e0b' : '#60a5fa';\n        const tUrl = taskUrlMap[normTitle(t.title)] || '';\n        const urlBtn = tUrl ? ` <a href=\"${esc(tUrl)}\" style=\"color:#60a5fa;font-size:12px;text-decoration:none;\">Open →</a>` : '';\n        pHtml += `<div style=\"background:#0f172a;border:1px solid #223055;border-radius:12px;padding:10px 12px;margin-top:6px;\">`;\n        pHtml += `<div style=\"display:flex;align-items:center;gap:6px;flex-wrap:wrap;\">${chip('#' + (i + 1))} ${chip(t.urgency || 'medium', urgColor + '33')} ${t.estimatedMinutes ? chip('~' + t.estimatedMinutes + 'min') : ''}</div>`;\n        pHtml += `<div style=\"color:#e8eefc;font-size:14px;font-weight:700;margin-top:6px;\">${esc(safeStr(t.title, 80))}${urlBtn}</div>`;\n        if (t.reason) pHtml += `<div style=\"color:#9fb0d0;font-size:12px;margin-top:4px;\">${esc(t.reason)}</div>`;\n        pHtml += `</div>`;\n    });\n    html += section('Project Top Priorities', pHtml);\n}\n\n// Overdue\nif (overdue.length) {\n    html += section(`Overdue (${overdue.length})`, overdue.slice(0, 10).map(t => taskRow(t, chip('OVERDUE', '#7f1d1d'))).join(''));\n}\n\n// Due today\nif (dueToday.length) {\n    html += section(`Due Today (${dueToday.length})`, dueToday.map(t => taskRow(t)).join(''));\n}\n\n// Due soon\nif (dueSoon.length) {\n    html += section(`Due Soon — next 7 days (${dueSoon.length})`, dueSoon.slice(0, 10).map(t => taskRow(t)).join(''));\n}\n\n// Project view\nif (projKeys.length) {\n    let pvHtml = '';\n    projKeys.forEach(k => {\n        const pv = projView[k];\n        pvHtml += `<div style=\"background:#111827;border:1px solid #223055;border-radius:14px;padding:12px;margin-top:8px;\">`;\n        pvHtml += `<div style=\"color:#e8eefc;font-weight:800;font-size:14px;\">${esc(pv.title)} <span style=\"color:#9fb0d0;font-weight:400;\">(${pv.tasks.length} tasks)</span></div>`;\n        pv.tasks.slice(0, 5).forEach(t => {\n            pvHtml += `<div style=\"color:#c8d4f0;font-size:13px;margin-top:4px;padding-left:8px;\">• ${esc(safeStr(t.title, 70))}${t.due ? ' <span style=\"color:#9fb0d0;\">due ' + esc(t.due) + '</span>' : ''}${t.inferred ? ' ' + chip('inferred', '#1e3a5f') : ''}</div>`;\n        });\n        pvHtml += `</div>`;\n    });\n    html += section('Project View', pvHtml);\n}\n\n// Unassigned with suggestions\nif (unassigned.length) {\n    let uHtml = '';\n    unassigned.forEach(t => {\n        uHtml += `<div style=\"background:#0f172a;border:1px solid #223055;border-radius:12px;padding:10px 12px;margin-top:6px;\">`;\n        uHtml += `<div style=\"color:#e8eefc;font-size:14px;font-weight:700;\">${esc(safeStr(t.title, 80))}</div>`;\n        uHtml += `<div style=\"color:#9fb0d0;font-size:12px;margin-top:4px;\">Suggested: ${t.projInferred.map(p => esc(p.title) + ' (' + p.score + ')').join(', ')}</div>`;\n        uHtml += `</div>`;\n    });\n    html += section('Unassigned Tasks — Suggested Projects', uHtml);\n}\n\n// Duplicates\nif (matches.length) {\n    const highDups = matches.filter(m => m.conf === 'high');\n    const possibleDups = matches.filter(m => m.conf === 'possible');\n    let dupHtml = '';\n    const renderDup = (m) => {\n        const badge = m.conf === 'high' ? chip('HIGH', '#7f1d1d') : chip(m.conf, '#1f2a44');\n        return `<div style=\"background:#0f172a;border:1px solid #223055;border-radius:12px;padding:10px 12px;margin-top:6px;\"><div>${badge} ${chip(m.type)} ${chip('score: ' + m.score)}</div><div style=\"color:#e8eefc;font-size:13px;margin-top:6px;\">\"${esc(safeStr(m.aTitle, 60))}\" ↔ \"${esc(safeStr(m.bTitle, 60))}\"</div><div style=\"color:#9fb0d0;font-size:11px;margin-top:2px;\">${m.rationale.map(r => esc(r)).join(' · ')}</div></div>`;\n    };\n    if (highDups.length) dupHtml += highDups.map(renderDup).join('');\n    if (possibleDups.length) dupHtml += possibleDups.map(renderDup).join('');\n    html += section(`Potential Duplicates (${matches.length})`, dupHtml);\n}\n\n// Changes since yesterday\nif (diffNew.length || diffDone.length || diffDue.length || diffRem.length) {\n    let chHtml = '<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;\">';\n    const row = (icon, label, color) => `<tr><td style=\"padding:4px 8px;border-bottom:1px solid #223055;color:${color};font-size:13px;\"><span style=\"font-size:16px;\">${icon}</span> ${esc(label)}</td></tr>`;\n    diffNew.forEach(t => { chHtml += row('✚', `NEW: ${safeStr(t.title, 70)} [${t.src}]`, '#34d399'); });\n    diffDone.forEach(t => { chHtml += row('✓', `DONE: ${safeStr(t.title, 70)} [${t.src}]`, '#60a5fa'); });\n    diffDue.forEach(t => { chHtml += row('⇄', `DUE: ${safeStr(t.title, 50)} (${t.oldDue} → ${t.newDue})`, '#fbbf24'); });\n    diffRem.forEach(t => { chHtml += row('−', `REMOVED: ${safeStr(t.title, 70)}`, '#9fb0d0'); });\n    chHtml += '</table>';\n    html += section(`Changes since ${esc(d.yesterdayDate || 'yesterday')}`, chHtml);\n}\n\n// Suggested actions\nif (suggestedActions.length) {\n    html += section('Suggested Actions', `<ul style=\"margin:4px 0 0 18px;padding:0;color:#c8d4f0;\">${suggestedActions.map(a => `<li style=\"margin:4px 0;line-height:18px;\">${esc(a)}</li>`).join('')}</ul>`);\n}\n\n// Notes\nif (notes.length) {\n    html += `<div style=\"margin-top:16px;background:#0f172a;border:1px solid #223055;border-radius:16px;padding:12px 14px;\"><div style=\"color:#e8eefc;font-weight:800;\">Notes</div><ul style=\"margin:8px 0 0 18px;color:#c8d4f0;padding:0;\">${notes.map(n => `<li style=\"margin:6px 0;line-height:18px;\">${esc(n)}</li>`).join('')}</ul></div>`;\n}\n\n// Machine-readable appendix\nhtml += `<details style=\"margin-top:14px;\"><summary style=\"color:#6f86b3;font-size:12px;cursor:pointer;\">Machine-readable appendix</summary><pre style=\"color:#6f86b3;font-size:10px;white-space:pre-wrap;margin-top:4px;\">${esc(appendix)}</pre></details>`;\n\n// Footer\nhtml += `<div style=\"margin-top:16px;color:#6f86b3;font-size:12px;\">Generated at: ${esc(new Date().toISOString())}</div>`;\nif (!ok) {\n    html += `<div style=\"margin-top:14px;background:#1a1020;border:1px solid #3a1f55;border-radius:16px;padding:12px 14px;\"><div style=\"color:#f5d0fe;font-weight:800;\">LLM parse error</div><div style=\"color:#f1c3ff;font-size:12px;margin-top:6px;white-space:pre-wrap;\">${esc(String(d.llmRaw || '').slice(0, 500))}</div></div>`;\n}\n\nhtml += `</td></tr><tr><td style=\"padding:12px 4px;text-align:center;color:#536a99;font-size:11px;\">Sent automatically via n8n · Morning Brief Advisor</td></tr></table></td></tr></table></body></html>`;\n\nreturn [{ json: { to: 'YOUR_EMAIL@EXAMPLE.COM', subject, text, html } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4912,
+        2512
+      ],
+      "id": "[REDACTED]",
+      "name": "Build Morning Brief Email1"
+    },
+    {
+      "parameters": {
+        "sendTo": "YOUR_EMAIL@EXAMPLE.COM",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        5120,
+        2512
+      ],
+      "id": "[REDACTED]",
+      "name": "Gmail: Send Morning Brief1",
+      "webhookId": "[REDACTED]",
+      "credentials": {}
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        3312,
+        2592
+      ],
+      "id": "[REDACTED]",
+      "name": "Manual Trigger"
+    },
+    {
+      "id": "desc_note",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3100,
+        2200
+      ],
+      "parameters": {
+        "content": "## Morning Brief Advisor Final\n\n**Category:** Task & Productivity\n\nDaily morning briefing workflow (7 AM trigger). Gathers tasks from Google Tasks, Notion task list, and Notion projects. Uses Ollama to generate a prioritized daily action plan. Parses AI response into an HTML email and sends via Gmail.\n\nKey integrations: Google Tasks, Notion (x2), Ollama, Gmail.",
+        "width": 460,
+        "height": 260,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Daily 7 AM Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Get many tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get many tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many tasks": {
+      "main": [
+        [
+          {
+            "node": "Get Notion Task List1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Notion Task List1": {
+      "main": [
+        [
+          {
+            "node": "Get Notion Projects1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Notion Projects1": {
+      "main": [
+        [
+          {
+            "node": "Core Processing1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Core Processing1": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Prompt1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LLM Prompt1": {
+      "main": [
+        [
+          {
+            "node": "Ollama: Morning Brief1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama: Morning Brief1": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM Response1": {
+      "main": [
+        [
+          {
+            "node": "Build Morning Brief Email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Morning Brief Email1": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Send Morning Brief1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "[REDACTED]",
+  "activeVersionId": null,
+  "versionCounter": 52,
+  "triggerCount": 0,
+  "shared": [],
+  "tags": [],
+  "activeVersion": null
+}

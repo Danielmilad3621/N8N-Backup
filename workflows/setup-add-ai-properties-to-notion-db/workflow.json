@@ -1,0 +1,106 @@
+{
+  "updatedAt": "2026-03-10T00:00:17.388Z",
+  "createdAt": "2026-03-07T00:50:35.344Z",
+  "id": "ifakdcdTa9GI4Ozg",
+  "name": "Setup: Add AI Properties to Notion DB",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "webhook_trigger_1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "path": "add-ai-properties",
+        "httpMethod": "POST",
+        "responseMode": "lastNode"
+      },
+      "webhookId": "add-ai-props-webhook"
+    },
+    {
+      "id": "http_add_props_1",
+      "name": "Add AI Properties to Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://api.notion.com/v1/databases/e0fe791a-93f8-4266-9784-acee8fc543c5",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "[REDACTED]",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{\"properties\":{\"AI Easy Today\":{\"checkbox\":{}},\"AI Ease Score\":{\"number\":{\"format\":\"number\"}},\"AI Effort Minutes\":{\"number\":{\"format\":\"number\"}},\"AI Reason\":{\"rich_text\":{}},\"AI Next Action\":{\"rich_text\":{}},\"AI Confidence\":{\"number\":{\"format\":\"number\"}},\"AI Reviewed At\":{\"date\":{}}}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "[REDACTED]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {}
+    },
+    {
+      "id": "desc_note",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        40,
+        80
+      ],
+      "parameters": {
+        "content": "## Setup: Add AI Properties to Notion DB\n\n**Category:** Notion Utilities\n\nOne-time setup utility. Triggered by webhook, sends an HTTP PATCH to add AI-related properties (columns) to a Notion database schema. Prepares the DB for workflows that write AI-generated data (e.g. Daily Easy Task Recommender).",
+        "width": 440,
+        "height": 220,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Add AI Properties to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "[REDACTED]",
+  "activeVersionId": null,
+  "versionCounter": 10,
+  "triggerCount": 1,
+  "shared": [],
+  "tags": [],
+  "activeVersion": null
+}

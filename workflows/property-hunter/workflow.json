@@ -1,11 +1,1305 @@
 {
-  "workflowId": "nt5MXNy0FeubWvZb8ZahW",
-  "workflowName": "Property Hunter",
-  "status": "published",
+  "updatedAt": "2026-03-09T23:59:57.631Z",
+  "createdAt": "2026-02-04T12:11:10.982Z",
+  "id": "nt5MXNy0FeubWvZb8ZahW",
+  "name": "Property Hunter",
+  "description": "Scans preconfigured Daft.ie new-home search URLs for Dublin-area properties, extracts listings with AI, detects newly seen listings, stores them in Supabase, and emails a summary of new results. Uses fixed internal search settings, including a max price of €500,000, and does not currently accept runtime input parameters from MCP clients.",
   "active": true,
   "isArchived": false,
-  "nodeCount": 17,
-  "createdAt": "2026-02-04T12:11:10.982Z",
-  "updatedAt": "2026-03-09T23:59:57.631Z",
-  "tags": []
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "config_cron",
+              "name": "CRON",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "config_search_urls",
+              "name": "SEARCH_URLS",
+              "value": "[REDACTED]",
+              "type": "array"
+            },
+            {
+              "id": "config_result_limit",
+              "name": "RESULT_LIMIT",
+              "value": 50,
+              "type": "number"
+            },
+            {
+              "id": "config_email_to",
+              "name": "EMAIL_TO",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "config_email_subject",
+              "name": "EMAIL_SUBJECT_PREFIX",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "config_location_country",
+              "name": "FIRECRAWL_COUNTRY",
+              "value": "IE",
+              "type": "string"
+            },
+            {
+              "id": "config_location_lang",
+              "name": "FIRECRAWL_LANG",
+              "value": "en-IE",
+              "type": "string"
+            },
+            {
+              "id": "config_firecrawl_url",
+              "name": "FIRECRAWL_SCRAPE_URL",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "run_timestamp",
+              "name": "RUN_TIMESTAMP",
+              "value": "[REDACTED]",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1744,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "all_urls",
+              "name": "ALL_URLS",
+              "value": "[REDACTED]",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Combine URLs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1520,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "ALL_URLS",
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Split URLs",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -1328,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "scrape",
+        "url": "={{ $json.ALL_URLS }}",
+        "requestOptions": {}
+      },
+      "type": "@mendable/n8n-nodes-firecrawl.firecrawl",
+      "typeVersion": 1,
+      "position": [
+        -1120,
+        576
+      ],
+      "id": "[REDACTED]",
+      "name": "Scrape a URL and get content as markdown or other formats",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "source_url",
+              "name": "source_url",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "scrape_success",
+              "name": "scrape_success",
+              "value": "[REDACTED]",
+              "type": "boolean"
+            },
+            {
+              "id": "markdown_content",
+              "name": "markdown_content",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "scrape_error",
+              "name": "scrape_error",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "status_code",
+              "name": "status_code",
+              "value": "[REDACTED]",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Prepare for Gemini",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -896,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a real-estate listings extraction expert.\n\nExtract the list of *individual property listings* from the Daft.ie search results page content below.\nThis is a \"New homes for sale\" search results page.\n\nSource URL: {{ $json.source_url }}\nHTTP status: {{ $json.status_code || 'unknown' }}\nScrape success: {{ $json.scrape_success }}\nScrape error (if any): {{ $json.scrape_error || 'none' }}\n\nPage content (markdown, truncated):\n{{ $json.markdown_content.slice(0, 60000) }}\n\nReturn ONLY valid JSON (no markdown, no commentary) in this exact format:\n\n{\n  \"currency\": \"EUR\",\n  \"search_url\": \"{{ $json.source_url }}\",\n  \"listings\": [\n    {\n      \"id\": \"1234567\",\n      \"title\": \"\",\n      \"address\": \"\",\n      \"price\": 450000,\n      \"property_type\": null,\n      \"bedrooms\": null,\n      \"bathrooms\": null,\n      \"size_sqm\": null,\n      \"agent\": null,\n      \"status\": null,\n      \"url\": null,\n      \"notes\": null\n    }\n  ]\n}\n\nRules:\n- Extract at most {{ $('Configuration').first().json.RESULT_LIMIT }} listings.\n- Use numbers for price/bedrooms/bathrooms/size_sqm where possible, otherwise null.\n- If a price is shown as \"From €X\" or a range, set \"price\" to the minimum numeric value and put the original text into \"notes\".\n- Prefer EUR as currency when prices are shown with \"€\".\n- Do NOT invent data. If a field is missing, use null.\n- If no listings are present in the content, return {\"currency\": null, \"search_url\": \"{{ $json.source_url }}\", \"listings\": []}\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -720,
+        576
+      ],
+      "id": "[REDACTED]",
+      "name": "AI Extract Listings"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI Agent JSON response, normalize fields, and attach source metadata\nconst out = [];\n\nfunction toNumberOrNull(v) {\n  if (v === null || v === undefined || v === '') return null;\n  const n = Number(String(v).replace(/[^0-9.]/g, ''));\n  return Number.isFinite(n) ? n : null;\n}\n\nfunction deriveId(listing) {\n  if (!listing) return null;\n  if (listing.id != null && String(listing.id).trim() !== '') return String(listing.id).trim();\n\n  const url = listing.url || listing.link;\n  if (typeof url === 'string') {\n    const m = url.match(/\\/([0-9]{5,})\\/?(?:\\?|#|$)/);\n    if (m) return m[1];\n  }\n  return null;\n}\n\nfor (const item of $input.all()) {\n  const sourceUrl = item.json.source_url;\n  const scrapeError = item.json.scrape_error;\n\n  const aiText =\n    item.json.output?.output || // handles double-wrapped cases\n    item.json.output ||         // common AI Agent output\n    item.json.response ||\n    item.json.message ||\n    item.json.text ||\n    '';\n\n  if (scrapeError) {\n    out.push({ json: { source_url: sourceUrl, currency: null, listings: [], error: scrapeError } });\n    continue;\n  }\n\n  try {\n    let cleaned = (aiText || '').trim();\n    cleaned = cleaned.replace(/```json\\s*/gi, '').replace(/```/g, '').trim();\n\n    const parsed = JSON.parse(cleaned);\n    const currency = parsed.currency ?? null;\n    const listings = Array.isArray(parsed.listings) ? parsed.listings : [];\n\n    const normalized = listings\n      .map(l => {\n        const url = l?.url || l?.link || null;\n\n        return {\n          id: deriveId(l),\n          title: l?.title ?? null,\n          address: l?.address ?? null,\n          price: toNumberOrNull(l?.price),\n          property_type: l?.property_type ?? null,\n          bedrooms: toNumberOrNull(l?.bedrooms),\n          bathrooms: toNumberOrNull(l?.bathrooms),\n          size_sqm: toNumberOrNull(l?.size_sqm),\n          agent: l?.agent ?? null,\n          status: l?.status ?? null,\n          url,\n          notes: l?.notes ?? null,\n          source_url: sourceUrl,\n        };\n      })\n      // Keep if it has at least a URL, or a title+price, etc.\n      .filter(l => l && (l.url || l.title || l.address));\n\n    out.push({\n      json: {\n        source_url: sourceUrl,\n        currency,\n        listings: normalized,\n        error: null,\n      },\n    });\n\n  } catch (e) {\n    out.push({\n      json: {\n        source_url: sourceUrl,\n        currency: null,\n        listings: [],\n        error: `Failed to parse AI output: ${e.message}`,\n      },\n    });\n  }\n}\n\nreturn out;\n"
+      },
+      "id": "[REDACTED]",
+      "name": "Parse Listings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate listings across all inputs, de-duplicate, detect *new* listings, and persist state.\n//\n// Uses workflow static data (global) to remember which listings were already emailed.\n// Each listing is keyed by (id || url || title|address|price).\n//\n// Output is compatible with downstream IF + Build HTML Email nodes.\n\nconst cfg = $('Configuration').first().json;\nconst runTimestamp = cfg.RUN_TIMESTAMP || new Date().toISOString();\n\nconst allListings = [];\nconst failedSources = [];\nlet currency = null;\nconst sourcesChecked = new Set();\n\nfunction keyOf(l) {\n  if (!l) return null;\n  if (l.id) return `id:${String(l.id)}`;\n  if (l.url) return `url:${String(l.url)}`;\n  const t = (l.title || '').trim();\n  const a = (l.address || '').trim();\n  const p = (l.price != null) ? String(l.price) : '';\n  const key = [t, a, p].filter(Boolean).join('|');\n  return key ? `meta:${key.toLowerCase()}` : null;\n}\n\n// Collect everything from incoming items\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  if (j.source_url) sourcesChecked.add(j.source_url);\n\n  if (j.error) {\n    failedSources.push({\n      url: j.source_url || 'unknown',\n      error: j.error,\n    });\n  }\n\n  if (!currency && j.currency) {\n    currency = j.currency;\n  }\n\n  if (Array.isArray(j.listings) && j.listings.length > 0) {\n    allListings.push(...j.listings);\n  }\n}\n\n// De-duplicate. If duplicates exist, prefer one that has a price.\nconst byKey = new Map();\nfor (const l of allListings) {\n  const k = keyOf(l);\n  if (!k) continue;\n\n  if (!byKey.has(k)) {\n    byKey.set(k, l);\n    continue;\n  }\n\n  const existing = byKey.get(k);\n  const existingHasPrice = existing?.price != null && Number.isFinite(Number(existing.price));\n  const currentHasPrice = l?.price != null && Number.isFinite(Number(l.price));\n\n  if (!existingHasPrice && currentHasPrice) {\n    byKey.set(k, l);\n  }\n}\n\nconst deduped = Array.from(byKey.values());\n\n// Sort by price (ascending), nulls last\ndeduped.sort((a, b) => {\n  const ap = (a?.price != null && Number.isFinite(Number(a.price))) ? Number(a.price) : Infinity;\n  const bp = (b?.price != null && Number.isFinite(Number(b.price))) ? Number(b.price) : Infinity;\n  return ap - bp;\n});\n\n// --- Detect new listings (persist across runs) ---\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.seenDaftListings) staticData.seenDaftListings = {};\nif (!staticData.seenDaftListingsOrder) staticData.seenDaftListingsOrder = [];\n\nconst seen = staticData.seenDaftListings;\nconst order = staticData.seenDaftListingsOrder;\n\nconst newListings = [];\nfor (const l of deduped) {\n  const k = keyOf(l);\n  if (!k) continue;\n  if (!seen[k]) {\n    newListings.push(l);\n    seen[k] = runTimestamp;\n    order.push(k);\n  }\n}\n\n// Prevent unbounded growth\nconst MAX_SEEN = 5000;\nconst KEEP_SEEN = 4000;\nif (order.length > MAX_SEEN) {\n  const remove = order.splice(0, order.length - KEEP_SEEN);\n  for (const k of remove) delete seen[k];\n}\n\nreturn [\n  {\n    json: {\n      currency,\n      search_urls: cfg.SEARCH_URLS,\n      all_listings: deduped,\n      new_listings: newListings,\n      failed_sources: failedSources,\n      total_sources_checked: sourcesChecked.size,\n      total_sources_failed: failedSources.length,\n      total_listings_extracted: allListings.length,\n      total_listings_deduped: deduped.length,\n      total_new_listings: newListings.length,\n      run_timestamp: runTimestamp,\n    },\n  },\n];\n"
+      },
+      "id": "[REDACTED]",
+      "name": "Aggregate & Detect New Listings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "new_listings",
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Split New Listings for DB",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "listing_id",
+              "name": "listing_id",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "title",
+              "name": "title",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "address",
+              "name": "address",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "price",
+              "name": "price",
+              "value": "[REDACTED]",
+              "type": "number"
+            },
+            {
+              "id": "bedrooms",
+              "name": "bedrooms",
+              "value": "[REDACTED]",
+              "type": "number"
+            },
+            {
+              "id": "bathrooms",
+              "name": "bathrooms",
+              "value": "[REDACTED]",
+              "type": "number"
+            },
+            {
+              "id": "size_sqm",
+              "name": "size_sqm",
+              "value": "[REDACTED]",
+              "type": "number"
+            },
+            {
+              "id": "property_type",
+              "name": "property_type",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "agent",
+              "name": "agent",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "url",
+              "name": "url",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "source_url",
+              "name": "source_url",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "notes",
+              "name": "notes",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "first_seen",
+              "name": "first_seen",
+              "value": "[REDACTED]",
+              "type": "string"
+            },
+            {
+              "id": "updated_at",
+              "name": "updated_at",
+              "value": "[REDACTED]",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Format Listing for Supabase",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        144,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "daft_listings"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        336,
+        400
+      ],
+      "id": "[REDACTED]",
+      "name": "Save to Supabase",
+      "credentials": {},
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "condition_new_listings",
+              "leftValue": "={{ $json.total_new_listings }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "If New Listings",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build an HTML email for *new* Daft.ie listings\nconst cfg = $('Configuration').first().json;\nconst data = $input.first().json;\n\nconst currency = (data.currency || 'EUR').toUpperCase();\nconst runTime = data.run_timestamp || cfg.RUN_TIMESTAMP;\nconst searchUrls = Array.isArray(data.search_urls) ? data.search_urls : [];\n\nconst newListings = Array.isArray(data.new_listings) ? data.new_listings : [];\nconst allListings = Array.isArray(data.all_listings) ? data.all_listings : [];\nconst failed = Array.isArray(data.failed_sources) ? data.failed_sources : [];\n\nfunction esc(s) {\n  return String(s ?? '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));\n}\n\nfunction fmtPrice(n) {\n  if (n == null || !Number.isFinite(Number(n))) return 'N/A';\n  try {\n    // Daft IE prices are almost always EUR\n    return new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(n));\n  } catch (e) {\n    return `${Number(n).toLocaleString('en-IE')} ${esc(currency)}`;\n  }\n}\n\nfunction fmtNum(n) {\n  if (n == null || !Number.isFinite(Number(n))) return '';\n  const v = Number(n);\n  return Number.isInteger(v) ? String(v) : String(v);\n}\n\nfunction listingRow(l) {\n  const price = fmtPrice(l.price);\n  const title = l.title || l.address || 'Listing';\n  const addr = l.address || '';\n  const beds = fmtNum(l.bedrooms);\n  const baths = fmtNum(l.bathrooms);\n  const size = fmtNum(l.size_sqm);\n  const type = l.property_type || '';\n  const agent = l.agent || '';\n  const status = l.status || '';\n  const url = l.url || l.source_url || '#';\n\n  const metaBits = [\n    beds ? `${beds} bed` : '',\n    baths ? `${baths} bath` : '',\n    size ? `${size} m²` : '',\n    type,\n    status,\n    agent ? `Agent: ${agent}` : '',\n  ].filter(Boolean).join(' · ');\n\n  return `\n    <tr>\n      <td style=\"padding:10px;border-bottom:1px solid #eee;white-space:nowrap;\"><strong>${esc(price)}</strong></td>\n      <td style=\"padding:10px;border-bottom:1px solid #eee;\">\n        <div style=\"font-weight:600;margin-bottom:4px;\"><a href=\"${esc(url)}\" style=\"color:#1a73e8;text-decoration:none;\">${esc(title)}</a></div>\n        ${addr ? `<div style=\"color:#555;\">${esc(addr)}</div>` : ``}\n        ${metaBits ? `<div style=\"color:#777;font-size:12px;margin-top:4px;\">${esc(metaBits)}</div>` : ``}\n        ${l.notes ? `<div style=\"color:#856404;background:#fff3cd;padding:8px;border-left:4px solid #ffc107;margin-top:8px;\">${esc(l.notes)}</div>` : ``}\n      </td>\n    </tr>\n  `;\n}\n\nconst maxRows = 50;\nconst rows = newListings.slice(0, maxRows).map(listingRow).join('');\n\nconst searchLinks = (searchUrls.length ? searchUrls : ['https://www.daft.ie/']).map(u => `<li><a href=\"${esc(u)}\" style=\"color:#1a73e8;text-decoration:none;\">${esc(u)}</a></li>`).join('');\n\nlet failedSection = '';\nif (failed.length) {\n  const failedRows = failed.map(f => `<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">${esc(f.url)}</td><td style=\"padding:8px;border-bottom:1px solid #eee;color:#b02a37;\">${esc(f.error)}</td></tr>`).join('');\n  failedSection = `\n    <div style=\"margin-top:26px;\">\n      <h3 style=\"margin:0 0 10px 0;\">Failed sources (${failed.length})</h3>\n      <table style=\"width:100%;border-collapse:collapse;background:#fff;border:1px solid #eee;border-radius:8px;overflow:hidden;\">\n        <thead><tr style=\"background:#f5f5f5;\"><th style=\"text-align:left;padding:10px;\">URL</th><th style=\"text-align:left;padding:10px;\">Error</th></tr></thead>\n        <tbody>${failedRows}</tbody>\n      </table>\n    </div>\n  `;\n}\n\nconst html = `\n<!doctype html>\n<html>\n<head><meta charset=\"utf-8\" /></head>\n<body style=\"font-family: Arial, sans-serif; background:#f6f6f6; margin:0; padding:20px;\">\n  <div style=\"max-width:980px;margin:0 auto;background:#fff;border-radius:12px;padding:22px;border:1px solid #eee;\">\n    <h1 style=\"margin:0 0 6px 0;\">Daft.ie: New homes listings update</h1>\n    <p style=\"margin:0;color:#666;\"><strong>Run time:</strong> ${esc(runTime)}</p>\n    <p style=\"margin:6px 0 0 0;color:#666;\">\n      <strong>New listings:</strong> ${newListings.length}\n      &nbsp;|&nbsp;\n      <strong>Total extracted:</strong> ${data.total_listings_deduped || allListings.length || 0}\n      &nbsp;|&nbsp;\n      <strong>Sources checked:</strong> ${data.total_sources_checked || 0}\n      &nbsp;|&nbsp;\n      <strong>Failed:</strong> ${data.total_sources_failed || 0}\n    </p>\n\n    <div style=\"margin-top:16px;\">\n      <h2 style=\"margin:0 0 10px 0;\">New listings (up to ${maxRows})</h2>\n      <table style=\"width:100%;border-collapse:collapse;background:#fff;border:1px solid #eee;border-radius:8px;overflow:hidden;\">\n        <thead>\n          <tr style=\"background:#f5f5f5;\">\n            <th style=\"text-align:left;padding:10px;\">Price</th>\n            <th style=\"text-align:left;padding:10px;\">Listing</th>\n          </tr>\n        </thead>\n        <tbody>\n          ${rows || `<tr><td colspan=\"2\" style=\"padding:12px;\">No new listings.</td></tr>`}\n        </tbody>\n      </table>\n    </div>\n\n    <div style=\"margin-top:22px;\">\n      <h3 style=\"margin:0 0 8px 0;\">Search links</h3>\n      <ul style=\"margin:0 0 0 18px;\">${searchLinks}</ul>\n    </div>\n\n    ${failedSection}\n\n    <p style=\"margin-top:28px;color:#777;font-size:12px;\">Automated report generated by n8n using Firecrawl + Gemini.</p>\n  </div>\n</body>\n</html>\n`;\n\nconst subjectDate = new Date(runTime).toLocaleDateString('en-IE');\nconst emailSubject = `${cfg.EMAIL_SUBJECT_PREFIX} ${newListings.length} new listing(s) - ${subjectDate}`;\n\nreturn [{\n  json: {\n    html_email: html,\n    email_subject: emailSubject,\n    email_to: cfg.EMAIL_TO\n  }\n}];\n"
+      },
+      "id": "[REDACTED]",
+      "name": "Build HTML Email (Daft)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email_to }}",
+        "subject": "={{ $json.email_subject }}",
+        "message": "={{ $json.html_email }}",
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Send via Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        336,
+        576
+      ],
+      "webhookId": "[REDACTED]",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1904,
+        576
+      ],
+      "id": "[REDACTED]",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:1.5b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        -864,
+        784
+      ],
+      "id": "[REDACTED]",
+      "name": "Ollama Chat Model",
+      "credentials": {}
+    },
+    {
+      "id": "desc_note",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2100,
+        200
+      ],
+      "parameters": {
+        "content": "## Property Hunter\n\n**Category:** Price Monitoring\n\nAutomated property listing monitor. Runs on schedule, scrapes real estate URLs via Firecrawl, uses Ollama AI Agent to extract structured listing data, detects new listings by comparing against Supabase, saves new entries, and sends HTML email alerts via Gmail.\n\nKey integrations: Firecrawl, Ollama AI Agent, Supabase, Gmail.",
+        "width": 450,
+        "height": 280,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Combine URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine URLs": {
+      "main": [
+        [
+          {
+            "node": "Split URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split URLs": {
+      "main": [
+        [
+          {
+            "node": "Scrape a URL and get content as markdown or other formats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape a URL and get content as markdown or other formats": {
+      "main": [
+        [
+          {
+            "node": "Prepare for Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for Gemini": {
+      "main": [
+        [
+          {
+            "node": "AI Extract Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Extract Listings": {
+      "main": [
+        [
+          {
+            "node": "Parse Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Listings": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Detect New Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate & Detect New Listings": {
+      "main": [
+        [
+          {
+            "node": "Split New Listings for DB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If New Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split New Listings for DB": {
+      "main": [
+        [
+          {
+            "node": "Format Listing for Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Listing for Supabase": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If New Listings": {
+      "main": [
+        [
+          {
+            "node": "Build HTML Email (Daft)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build HTML Email (Daft)": {
+      "main": [
+        [
+          {
+            "node": "Send via Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Extract Listings",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "[REDACTED]",
+  "activeVersionId": "[REDACTED]",
+  "versionCounter": 53,
+  "triggerCount": 1,
+  "shared": [],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-09T23:59:57.633Z",
+    "createdAt": "2026-03-09T23:59:57.633Z",
+    "versionId": "[REDACTED]",
+    "workflowId": "nt5MXNy0FeubWvZb8ZahW",
+    "nodes": [
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "config_cron",
+                "name": "CRON",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "config_search_urls",
+                "name": "SEARCH_URLS",
+                "value": "[REDACTED]",
+                "type": "array"
+              },
+              {
+                "id": "config_result_limit",
+                "name": "RESULT_LIMIT",
+                "value": 50,
+                "type": "number"
+              },
+              {
+                "id": "config_email_to",
+                "name": "EMAIL_TO",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "config_email_subject",
+                "name": "EMAIL_SUBJECT_PREFIX",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "config_location_country",
+                "name": "FIRECRAWL_COUNTRY",
+                "value": "IE",
+                "type": "string"
+              },
+              {
+                "id": "config_location_lang",
+                "name": "FIRECRAWL_LANG",
+                "value": "en-IE",
+                "type": "string"
+              },
+              {
+                "id": "config_firecrawl_url",
+                "name": "FIRECRAWL_SCRAPE_URL",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "run_timestamp",
+                "name": "RUN_TIMESTAMP",
+                "value": "[REDACTED]",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "Configuration",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -1744,
+          576
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "all_urls",
+                "name": "ALL_URLS",
+                "value": "[REDACTED]",
+                "type": "array"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "Combine URLs",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -1520,
+          576
+        ]
+      },
+      {
+        "parameters": {
+          "fieldToSplitOut": "ALL_URLS",
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "Split URLs",
+        "type": "n8n-nodes-base.splitOut",
+        "typeVersion": 1,
+        "position": [
+          -1328,
+          576
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "scrape",
+          "url": "={{ $json.ALL_URLS }}",
+          "requestOptions": {}
+        },
+        "type": "@mendable/n8n-nodes-firecrawl.firecrawl",
+        "typeVersion": 1,
+        "position": [
+          -1120,
+          576
+        ],
+        "id": "[REDACTED]",
+        "name": "Scrape a URL and get content as markdown or other formats",
+        "credentials": {}
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "source_url",
+                "name": "source_url",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "scrape_success",
+                "name": "scrape_success",
+                "value": "[REDACTED]",
+                "type": "boolean"
+              },
+              {
+                "id": "markdown_content",
+                "name": "markdown_content",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "scrape_error",
+                "name": "scrape_error",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "status_code",
+                "name": "status_code",
+                "value": "[REDACTED]",
+                "type": "number"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "Prepare for Gemini",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -896,
+          576
+        ]
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "=You are a real-estate listings extraction expert.\n\nExtract the list of *individual property listings* from the Daft.ie search results page content below.\nThis is a \"New homes for sale\" search results page.\n\nSource URL: {{ $json.source_url }}\nHTTP status: {{ $json.status_code || 'unknown' }}\nScrape success: {{ $json.scrape_success }}\nScrape error (if any): {{ $json.scrape_error || 'none' }}\n\nPage content (markdown, truncated):\n{{ $json.markdown_content.slice(0, 60000) }}\n\nReturn ONLY valid JSON (no markdown, no commentary) in this exact format:\n\n{\n  \"currency\": \"EUR\",\n  \"search_url\": \"{{ $json.source_url }}\",\n  \"listings\": [\n    {\n      \"id\": \"1234567\",\n      \"title\": \"\",\n      \"address\": \"\",\n      \"price\": 450000,\n      \"property_type\": null,\n      \"bedrooms\": null,\n      \"bathrooms\": null,\n      \"size_sqm\": null,\n      \"agent\": null,\n      \"status\": null,\n      \"url\": null,\n      \"notes\": null\n    }\n  ]\n}\n\nRules:\n- Extract at most {{ $('Configuration').first().json.RESULT_LIMIT }} listings.\n- Use numbers for price/bedrooms/bathrooms/size_sqm where possible, otherwise null.\n- If a price is shown as \"From €X\" or a range, set \"price\" to the minimum numeric value and put the original text into \"notes\".\n- Prefer EUR as currency when prices are shown with \"€\".\n- Do NOT invent data. If a field is missing, use null.\n- If no listings are present in the content, return {\"currency\": null, \"search_url\": \"{{ $json.source_url }}\", \"listings\": []}\n",
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [
+          -720,
+          576
+        ],
+        "id": "[REDACTED]",
+        "name": "AI Extract Listings"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Parse AI Agent JSON response, normalize fields, and attach source metadata\nconst out = [];\n\nfunction toNumberOrNull(v) {\n  if (v === null || v === undefined || v === '') return null;\n  const n = Number(String(v).replace(/[^0-9.]/g, ''));\n  return Number.isFinite(n) ? n : null;\n}\n\nfunction deriveId(listing) {\n  if (!listing) return null;\n  if (listing.id != null && String(listing.id).trim() !== '') return String(listing.id).trim();\n\n  const url = listing.url || listing.link;\n  if (typeof url === 'string') {\n    const m = url.match(/\\/([0-9]{5,})\\/?(?:\\?|#|$)/);\n    if (m) return m[1];\n  }\n  return null;\n}\n\nfor (const item of $input.all()) {\n  const sourceUrl = item.json.source_url;\n  const scrapeError = item.json.scrape_error;\n\n  const aiText =\n    item.json.output?.output || // handles double-wrapped cases\n    item.json.output ||         // common AI Agent output\n    item.json.response ||\n    item.json.message ||\n    item.json.text ||\n    '';\n\n  if (scrapeError) {\n    out.push({ json: { source_url: sourceUrl, currency: null, listings: [], error: scrapeError } });\n    continue;\n  }\n\n  try {\n    let cleaned = (aiText || '').trim();\n    cleaned = cleaned.replace(/```json\\s*/gi, '').replace(/```/g, '').trim();\n\n    const parsed = JSON.parse(cleaned);\n    const currency = parsed.currency ?? null;\n    const listings = Array.isArray(parsed.listings) ? parsed.listings : [];\n\n    const normalized = listings\n      .map(l => {\n        const url = l?.url || l?.link || null;\n\n        return {\n          id: deriveId(l),\n          title: l?.title ?? null,\n          address: l?.address ?? null,\n          price: toNumberOrNull(l?.price),\n          property_type: l?.property_type ?? null,\n          bedrooms: toNumberOrNull(l?.bedrooms),\n          bathrooms: toNumberOrNull(l?.bathrooms),\n          size_sqm: toNumberOrNull(l?.size_sqm),\n          agent: l?.agent ?? null,\n          status: l?.status ?? null,\n          url,\n          notes: l?.notes ?? null,\n          source_url: sourceUrl,\n        };\n      })\n      // Keep if it has at least a URL, or a title+price, etc.\n      .filter(l => l && (l.url || l.title || l.address));\n\n    out.push({\n      json: {\n        source_url: sourceUrl,\n        currency,\n        listings: normalized,\n        error: null,\n      },\n    });\n\n  } catch (e) {\n    out.push({\n      json: {\n        source_url: sourceUrl,\n        currency: null,\n        listings: [],\n        error: `Failed to parse AI output: ${e.message}`,\n      },\n    });\n  }\n}\n\nreturn out;\n"
+        },
+        "id": "[REDACTED]",
+        "name": "Parse Listings",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -432,
+          576
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Aggregate listings across all inputs, de-duplicate, detect *new* listings, and persist state.\n//\n// Uses workflow static data (global) to remember which listings were already emailed.\n// Each listing is keyed by (id || url || title|address|price).\n//\n// Output is compatible with downstream IF + Build HTML Email nodes.\n\nconst cfg = $('Configuration').first().json;\nconst runTimestamp = cfg.RUN_TIMESTAMP || new Date().toISOString();\n\nconst allListings = [];\nconst failedSources = [];\nlet currency = null;\nconst sourcesChecked = new Set();\n\nfunction keyOf(l) {\n  if (!l) return null;\n  if (l.id) return `id:${String(l.id)}`;\n  if (l.url) return `url:${String(l.url)}`;\n  const t = (l.title || '').trim();\n  const a = (l.address || '').trim();\n  const p = (l.price != null) ? String(l.price) : '';\n  const key = [t, a, p].filter(Boolean).join('|');\n  return key ? `meta:${key.toLowerCase()}` : null;\n}\n\n// Collect everything from incoming items\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  if (j.source_url) sourcesChecked.add(j.source_url);\n\n  if (j.error) {\n    failedSources.push({\n      url: j.source_url || 'unknown',\n      error: j.error,\n    });\n  }\n\n  if (!currency && j.currency) {\n    currency = j.currency;\n  }\n\n  if (Array.isArray(j.listings) && j.listings.length > 0) {\n    allListings.push(...j.listings);\n  }\n}\n\n// De-duplicate. If duplicates exist, prefer one that has a price.\nconst byKey = new Map();\nfor (const l of allListings) {\n  const k = keyOf(l);\n  if (!k) continue;\n\n  if (!byKey.has(k)) {\n    byKey.set(k, l);\n    continue;\n  }\n\n  const existing = byKey.get(k);\n  const existingHasPrice = existing?.price != null && Number.isFinite(Number(existing.price));\n  const currentHasPrice = l?.price != null && Number.isFinite(Number(l.price));\n\n  if (!existingHasPrice && currentHasPrice) {\n    byKey.set(k, l);\n  }\n}\n\nconst deduped = Array.from(byKey.values());\n\n// Sort by price (ascending), nulls last\ndeduped.sort((a, b) => {\n  const ap = (a?.price != null && Number.isFinite(Number(a.price))) ? Number(a.price) : Infinity;\n  const bp = (b?.price != null && Number.isFinite(Number(b.price))) ? Number(b.price) : Infinity;\n  return ap - bp;\n});\n\n// --- Detect new listings (persist across runs) ---\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.seenDaftListings) staticData.seenDaftListings = {};\nif (!staticData.seenDaftListingsOrder) staticData.seenDaftListingsOrder = [];\n\nconst seen = staticData.seenDaftListings;\nconst order = staticData.seenDaftListingsOrder;\n\nconst newListings = [];\nfor (const l of deduped) {\n  const k = keyOf(l);\n  if (!k) continue;\n  if (!seen[k]) {\n    newListings.push(l);\n    seen[k] = runTimestamp;\n    order.push(k);\n  }\n}\n\n// Prevent unbounded growth\nconst MAX_SEEN = 5000;\nconst KEEP_SEEN = 4000;\nif (order.length > MAX_SEEN) {\n  const remove = order.splice(0, order.length - KEEP_SEEN);\n  for (const k of remove) delete seen[k];\n}\n\nreturn [\n  {\n    json: {\n      currency,\n      search_urls: cfg.SEARCH_URLS,\n      all_listings: deduped,\n      new_listings: newListings,\n      failed_sources: failedSources,\n      total_sources_checked: sourcesChecked.size,\n      total_sources_failed: failedSources.length,\n      total_listings_extracted: allListings.length,\n      total_listings_deduped: deduped.length,\n      total_new_listings: newListings.length,\n      run_timestamp: runTimestamp,\n    },\n  },\n];\n"
+        },
+        "id": "[REDACTED]",
+        "name": "Aggregate & Detect New Listings",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -240,
+          576
+        ]
+      },
+      {
+        "parameters": {
+          "fieldToSplitOut": "new_listings",
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "Split New Listings for DB",
+        "type": "n8n-nodes-base.splitOut",
+        "typeVersion": 1,
+        "position": [
+          -48,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "listing_id",
+                "name": "listing_id",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "title",
+                "name": "title",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "address",
+                "name": "address",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "price",
+                "name": "price",
+                "value": "[REDACTED]",
+                "type": "number"
+              },
+              {
+                "id": "bedrooms",
+                "name": "bedrooms",
+                "value": "[REDACTED]",
+                "type": "number"
+              },
+              {
+                "id": "bathrooms",
+                "name": "bathrooms",
+                "value": "[REDACTED]",
+                "type": "number"
+              },
+              {
+                "id": "size_sqm",
+                "name": "size_sqm",
+                "value": "[REDACTED]",
+                "type": "number"
+              },
+              {
+                "id": "property_type",
+                "name": "property_type",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "agent",
+                "name": "agent",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "status",
+                "name": "status",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "url",
+                "name": "url",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "source_url",
+                "name": "source_url",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "notes",
+                "name": "notes",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "first_seen",
+                "name": "first_seen",
+                "value": "[REDACTED]",
+                "type": "string"
+              },
+              {
+                "id": "updated_at",
+                "name": "updated_at",
+                "value": "[REDACTED]",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "Format Listing for Supabase",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          144,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "tableId": "daft_listings"
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          336,
+          400
+        ],
+        "id": "[REDACTED]",
+        "name": "Save to Supabase",
+        "credentials": {},
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "id": "condition_new_listings",
+                "leftValue": "={{ $json.total_new_listings }}",
+                "rightValue": 0,
+                "operator": {
+                  "type": "number",
+                  "operation": "gt"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "If New Listings",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          -48,
+          576
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Build an HTML email for *new* Daft.ie listings\nconst cfg = $('Configuration').first().json;\nconst data = $input.first().json;\n\nconst currency = (data.currency || 'EUR').toUpperCase();\nconst runTime = data.run_timestamp || cfg.RUN_TIMESTAMP;\nconst searchUrls = Array.isArray(data.search_urls) ? data.search_urls : [];\n\nconst newListings = Array.isArray(data.new_listings) ? data.new_listings : [];\nconst allListings = Array.isArray(data.all_listings) ? data.all_listings : [];\nconst failed = Array.isArray(data.failed_sources) ? data.failed_sources : [];\n\nfunction esc(s) {\n  return String(s ?? '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));\n}\n\nfunction fmtPrice(n) {\n  if (n == null || !Number.isFinite(Number(n))) return 'N/A';\n  try {\n    // Daft IE prices are almost always EUR\n    return new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(n));\n  } catch (e) {\n    return `${Number(n).toLocaleString('en-IE')} ${esc(currency)}`;\n  }\n}\n\nfunction fmtNum(n) {\n  if (n == null || !Number.isFinite(Number(n))) return '';\n  const v = Number(n);\n  return Number.isInteger(v) ? String(v) : String(v);\n}\n\nfunction listingRow(l) {\n  const price = fmtPrice(l.price);\n  const title = l.title || l.address || 'Listing';\n  const addr = l.address || '';\n  const beds = fmtNum(l.bedrooms);\n  const baths = fmtNum(l.bathrooms);\n  const size = fmtNum(l.size_sqm);\n  const type = l.property_type || '';\n  const agent = l.agent || '';\n  const status = l.status || '';\n  const url = l.url || l.source_url || '#';\n\n  const metaBits = [\n    beds ? `${beds} bed` : '',\n    baths ? `${baths} bath` : '',\n    size ? `${size} m²` : '',\n    type,\n    status,\n    agent ? `Agent: ${agent}` : '',\n  ].filter(Boolean).join(' · ');\n\n  return `\n    <tr>\n      <td style=\"padding:10px;border-bottom:1px solid #eee;white-space:nowrap;\"><strong>${esc(price)}</strong></td>\n      <td style=\"padding:10px;border-bottom:1px solid #eee;\">\n        <div style=\"font-weight:600;margin-bottom:4px;\"><a href=\"${esc(url)}\" style=\"color:#1a73e8;text-decoration:none;\">${esc(title)}</a></div>\n        ${addr ? `<div style=\"color:#555;\">${esc(addr)}</div>` : ``}\n        ${metaBits ? `<div style=\"color:#777;font-size:12px;margin-top:4px;\">${esc(metaBits)}</div>` : ``}\n        ${l.notes ? `<div style=\"color:#856404;background:#fff3cd;padding:8px;border-left:4px solid #ffc107;margin-top:8px;\">${esc(l.notes)}</div>` : ``}\n      </td>\n    </tr>\n  `;\n}\n\nconst maxRows = 50;\nconst rows = newListings.slice(0, maxRows).map(listingRow).join('');\n\nconst searchLinks = (searchUrls.length ? searchUrls : ['https://www.daft.ie/']).map(u => `<li><a href=\"${esc(u)}\" style=\"color:#1a73e8;text-decoration:none;\">${esc(u)}</a></li>`).join('');\n\nlet failedSection = '';\nif (failed.length) {\n  const failedRows = failed.map(f => `<tr><td style=\"padding:8px;border-bottom:1px solid #eee;\">${esc(f.url)}</td><td style=\"padding:8px;border-bottom:1px solid #eee;color:#b02a37;\">${esc(f.error)}</td></tr>`).join('');\n  failedSection = `\n    <div style=\"margin-top:26px;\">\n      <h3 style=\"margin:0 0 10px 0;\">Failed sources (${failed.length})</h3>\n      <table style=\"width:100%;border-collapse:collapse;background:#fff;border:1px solid #eee;border-radius:8px;overflow:hidden;\">\n        <thead><tr style=\"background:#f5f5f5;\"><th style=\"text-align:left;padding:10px;\">URL</th><th style=\"text-align:left;padding:10px;\">Error</th></tr></thead>\n        <tbody>${failedRows}</tbody>\n      </table>\n    </div>\n  `;\n}\n\nconst html = `\n<!doctype html>\n<html>\n<head><meta charset=\"utf-8\" /></head>\n<body style=\"font-family: Arial, sans-serif; background:#f6f6f6; margin:0; padding:20px;\">\n  <div style=\"max-width:980px;margin:0 auto;background:#fff;border-radius:12px;padding:22px;border:1px solid #eee;\">\n    <h1 style=\"margin:0 0 6px 0;\">Daft.ie: New homes listings update</h1>\n    <p style=\"margin:0;color:#666;\"><strong>Run time:</strong> ${esc(runTime)}</p>\n    <p style=\"margin:6px 0 0 0;color:#666;\">\n      <strong>New listings:</strong> ${newListings.length}\n      &nbsp;|&nbsp;\n      <strong>Total extracted:</strong> ${data.total_listings_deduped || allListings.length || 0}\n      &nbsp;|&nbsp;\n      <strong>Sources checked:</strong> ${data.total_sources_checked || 0}\n      &nbsp;|&nbsp;\n      <strong>Failed:</strong> ${data.total_sources_failed || 0}\n    </p>\n\n    <div style=\"margin-top:16px;\">\n      <h2 style=\"margin:0 0 10px 0;\">New listings (up to ${maxRows})</h2>\n      <table style=\"width:100%;border-collapse:collapse;background:#fff;border:1px solid #eee;border-radius:8px;overflow:hidden;\">\n        <thead>\n          <tr style=\"background:#f5f5f5;\">\n            <th style=\"text-align:left;padding:10px;\">Price</th>\n            <th style=\"text-align:left;padding:10px;\">Listing</th>\n          </tr>\n        </thead>\n        <tbody>\n          ${rows || `<tr><td colspan=\"2\" style=\"padding:12px;\">No new listings.</td></tr>`}\n        </tbody>\n      </table>\n    </div>\n\n    <div style=\"margin-top:22px;\">\n      <h3 style=\"margin:0 0 8px 0;\">Search links</h3>\n      <ul style=\"margin:0 0 0 18px;\">${searchLinks}</ul>\n    </div>\n\n    ${failedSection}\n\n    <p style=\"margin-top:28px;color:#777;font-size:12px;\">Automated report generated by n8n using Firecrawl + Gemini.</p>\n  </div>\n</body>\n</html>\n`;\n\nconst subjectDate = new Date(runTime).toLocaleDateString('en-IE');\nconst emailSubject = `${cfg.EMAIL_SUBJECT_PREFIX} ${newListings.length} new listing(s) - ${subjectDate}`;\n\nreturn [{\n  json: {\n    html_email: html,\n    email_subject: emailSubject,\n    email_to: cfg.EMAIL_TO\n  }\n}];\n"
+        },
+        "id": "[REDACTED]",
+        "name": "Build HTML Email (Daft)",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          144,
+          576
+        ]
+      },
+      {
+        "parameters": {
+          "sendTo": "={{ $json.email_to }}",
+          "subject": "={{ $json.email_subject }}",
+          "message": "={{ $json.html_email }}",
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "Send via Gmail",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.2,
+        "position": [
+          336,
+          576
+        ],
+        "webhookId": "[REDACTED]",
+        "credentials": {}
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "triggerAtHour": 6
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          -1904,
+          576
+        ],
+        "id": "[REDACTED]",
+        "name": "Schedule Trigger"
+      },
+      {
+        "parameters": {
+          "model": "qwen2.5:1.5b",
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+        "typeVersion": 1,
+        "position": [
+          -864,
+          784
+        ],
+        "id": "[REDACTED]",
+        "name": "Ollama Chat Model",
+        "credentials": {}
+      },
+      {
+        "id": "desc_note",
+        "name": "Workflow Description",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -2100,
+          200
+        ],
+        "parameters": {
+          "content": "## Property Hunter\n\n**Category:** Price Monitoring\n\nAutomated property listing monitor. Runs on schedule, scrapes real estate URLs via Firecrawl, uses Ollama AI Agent to extract structured listing data, detects new listings by comparing against Supabase, saves new entries, and sends HTML email alerts via Gmail.\n\nKey integrations: Firecrawl, Ollama AI Agent, Supabase, Gmail.",
+          "width": 450,
+          "height": 280,
+          "color": 3
+        }
+      }
+    ],
+    "connections": {
+      "Configuration": {
+        "main": [
+          [
+            {
+              "node": "Combine URLs",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Combine URLs": {
+        "main": [
+          [
+            {
+              "node": "Split URLs",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split URLs": {
+        "main": [
+          [
+            {
+              "node": "Scrape a URL and get content as markdown or other formats",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Scrape a URL and get content as markdown or other formats": {
+        "main": [
+          [
+            {
+              "node": "Prepare for Gemini",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare for Gemini": {
+        "main": [
+          [
+            {
+              "node": "AI Extract Listings",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AI Extract Listings": {
+        "main": [
+          [
+            {
+              "node": "Parse Listings",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Listings": {
+        "main": [
+          [
+            {
+              "node": "Aggregate & Detect New Listings",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Aggregate & Detect New Listings": {
+        "main": [
+          [
+            {
+              "node": "Split New Listings for DB",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "If New Listings",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split New Listings for DB": {
+        "main": [
+          [
+            {
+              "node": "Format Listing for Supabase",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Listing for Supabase": {
+        "main": [
+          [
+            {
+              "node": "Save to Supabase",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If New Listings": {
+        "main": [
+          [
+            {
+              "node": "Build HTML Email (Daft)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build HTML Email (Daft)": {
+        "main": [
+          [
+            {
+              "node": "Send via Gmail",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Configuration",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ollama Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI Extract Listings",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Daniel Salib",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-03-09T23:59:57.676Z",
+        "id": 40,
+        "workflowId": "nt5MXNy0FeubWvZb8ZahW",
+        "versionId": "[REDACTED]",
+        "event": "activated",
+        "userId": "[REDACTED]"
+      },
+      {
+        "createdAt": "2026-03-09T23:59:57.662Z",
+        "id": 39,
+        "workflowId": "nt5MXNy0FeubWvZb8ZahW",
+        "versionId": "[REDACTED]",
+        "event": "deactivated",
+        "userId": "[REDACTED]"
+      }
+    ]
+  }
 }

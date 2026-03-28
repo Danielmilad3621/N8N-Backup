@@ -1,0 +1,2020 @@
+{
+  "updatedAt": "2026-03-24T15:08:51.337Z",
+  "createdAt": "2026-03-06T23:53:52.703Z",
+  "id": "Ww7xc3FuKKR8hYj1",
+  "name": "Daily Easy Task Recommender for Notion",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "id": "schedule_trigger_1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "[REDACTED]",
+          "mode": "list",
+          "cachedResultName": "Task list",
+          "cachedResultUrl": "[REDACTED]"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "notion_fetch_1",
+      "name": "Notion Get Tasks",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        464,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst normalized = items\n  .filter(item => {\n    const d = item.json || {};\n    const taskName = (d.property_task_name || d.name || '').trim();\n    const rawStatus = (d.property_status || '').trim();\n    const status = rawStatus.toLowerCase();\n    const allowed = status === '' || status === 'not started' || status === 'in progress';\n    return taskName !== '' && allowed;\n  })\n  .map(item => {\n    const d = item.json || {};\n    const extractDate = (v) => {\n      if (!v) return '';\n      if (typeof v === 'object' && v.start) return v.start;\n      if (typeof v === 'string') return v;\n      return '';\n    };\n    return {\n      json: {\n        page_id: d.id,\n        task_name: (d.property_task_name || d.name || '').trim(),\n        status: d.property_status || 'Not started',\n        notes: d.property_notes || '',\n        due_date: extractDate(d.property_due_date),\n        scheduled_start: extractDate(d.property_scheduled_start),\n        scheduled_end: extractDate(d.property_scheduled_end),\n        priority: d.property_propriety || '',\n        project_related_ids: Array.isArray(d.property_project_related) ? d.property_project_related : [],\n        created_time: d.property_creation_date || ''\n      }\n    };\n  });\n\nreturn normalized.length > 0 ? normalized : [{ json: { _empty: true } }];\n"
+      },
+      "id": "code_normalize_1",
+      "name": "Normalize Task Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json._empty }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter_empty_1",
+      "name": "Filter Valid Tasks",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        912,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {}
+      },
+      "id": "split_batches_1",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item;\nif (!item || !item.json) return {json: {_skip: true}};\nconst task = item.json;\n\nconst userPrompt = `Evaluate this Notion task and determine if it is easy to complete today.\\n\\nTask name: ${task.task_name || 'Untitled'}\\nStatus: ${task.status || 'Not started'}\\nNotes: ${task.notes || 'None'}\\nDue date: ${task.due_date || 'Not set'}\\nPriority: ${task.priority || 'Not set'}\\n\\nRules:\\n- Prefer tasks that are specific and actionable.\\n- Penalize vague, broad, or blocked tasks.\\n- Penalize tasks requiring deep work longer than 90 minutes.\\n\\nRespond with ONLY a JSON object:\\n{\"easy_today\": boolean, \"ease_score\": 0-100, \"estimated_effort_minutes\": number, \"confidence\": 0-100, \"reason\": \"string\", \"next_action\": \"string\", \"blockers\": []}`;\n\nreturn { json: { ...task, _userPrompt: userPrompt, chatInput: userPrompt } };"
+      },
+      "id": "code_build_prompt_1",
+      "name": "Build Ollama Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json._userPrompt }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1488,
+        304
+      ],
+      "id": "[REDACTED]",
+      "name": "Basic LLM Chain",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:1.5b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        96
+      ],
+      "id": "[REDACTED]",
+      "name": "Ollama Chat Model",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge_1",
+      "name": "Merge Task and Response",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1776,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item;\nif (!item || !item.json) return {json:{easy_today:false,ease_score:0,estimated_effort_minutes:0,confidence:0,reason:'No input',next_action:'',blockers:[],ai_reviewed_at:new Date().toISOString()}};\nconst merged = item.json;\nconst task = merged.page_id ? merged : {};\nconst raw = merged.output || merged.text || merged.message || merged.response || merged.content || '';\nlet result = {easy_today:false,ease_score:0,estimated_effort_minutes:0,confidence:0,reason:'AI evaluation failed',next_action:'',blockers:[]};\ntry {\n  const str = typeof raw === 'string' ? raw : JSON.stringify(raw);\n  const cleaned = str.replace(/```json\\s*/gi,'').replace(/```\\s*/g,'').trim();\n  const m = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (m) {\n    const p = JSON.parse(m[0]);\n    if (p && typeof p === 'object') {\n      result = {easy_today:!!p.easy_today,ease_score:Math.min(100,Math.max(0,parseInt(p.ease_score,10)||0)),estimated_effort_minutes:Math.max(0,parseInt(p.estimated_effort_minutes,10)||0),confidence:Math.min(100,Math.max(0,parseInt(p.confidence,10)||0)),reason:String(p.reason||'').slice(0,2000),next_action:String(p.next_action||'').slice(0,2000),blockers:Array.isArray(p.blockers)?p.blockers:[]};\n    }\n  }\n} catch(e) { result.reason = 'Parse error: '+String(e.message||'').slice(0,200); }\nreturn {json:{page_id:task.page_id,task_name:task.task_name,due_date:task.due_date,priority:task.priority,notes:task.notes,project_related_ids:task.project_related_ids,...result,ai_reviewed_at:new Date().toISOString()}};"
+      },
+      "id": "code_parse_1",
+      "name": "Parse Ollama Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item;\nif (!item || !item.json) return {json:{_skip:true}};\nconst d = item.json;\n\nconst properties = {\n  'AI Easy Today': {checkbox: d.easy_today === true},\n  'AI Ease Score': {number: typeof d.ease_score === 'number' ? d.ease_score : 0},\n  'AI Effort Minutes': {number: typeof d.estimated_effort_minutes === 'number' ? d.estimated_effort_minutes : 0},\n  'AI Reason': {rich_text: [{text: {content: String(d.reason||'').slice(0,2000)}}]},\n  'AI Next Action': {rich_text: [{text: {content: String(d.next_action||'').slice(0,2000)}}]},\n  'AI Confidence': {number: typeof d.confidence === 'number' ? d.confidence : 0},\n  'AI Reviewed At': {date: {start: d.ai_reviewed_at || new Date().toISOString()}}\n};\n\nif (d.easy_today === true && d.ease_score >= 45 && d.confidence >= 55) {\n  properties['AI Recommended'] = {checkbox: true};\n}\n\nreturn {json:{page_id:d.page_id,task_name:d.task_name,easy_today:d.easy_today,ease_score:d.ease_score,confidence:d.confidence,estimated_effort_minutes:d.estimated_effort_minutes,due_date:d.due_date,priority:d.priority,notes:d.notes,notionBody:{properties}}};"
+      },
+      "id": "code_build_body_1",
+      "name": "Build Notion Update Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.page_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "[REDACTED]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "[REDACTED]"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.notionBody) }}",
+        "options": {}
+      },
+      "id": "http_update_1",
+      "name": "Update Notion Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2416,
+        304
+      ],
+      "credentials": {},
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "mode": "id",
+          "value": "[REDACTED]"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "[REDACTED]",
+              "condition": "equals",
+              "checkboxValue": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notion_easy_1",
+      "name": "Notion Get Easy Tasks",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        560
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst seen = new Set();\nconst result = [];\n\nfor (const item of items) {\n  const d = item.json || {};\n  const relations = d.property_project_related;\n  let list = [];\n  if (Array.isArray(relations)) list = relations;\n  else if (relations && typeof relations === 'object' && Array.isArray(relations.relation)) list = relations.relation;\n  for (const r of list) {\n    const id = (r && r.id) ? r.id : (typeof r === 'string' ? r : '');\n    if (id && !seen.has(id)) {\n      seen.add(id);\n      result.push({json: {projectId: id}});\n    }\n  }\n}\n\nreturn result.length > 0 ? result : [{json: {projectId: null}}];"
+      },
+      "id": "extract_project_ids",
+      "name": "Extract Project IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.notion.com/v1/pages/{{ $json.projectId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "[REDACTED]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "[REDACTED]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch_project_page",
+      "name": "Fetch Project Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1568,
+        768
+      ],
+      "credentials": {},
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst projectMap = {};\n\nfor (const item of items) {\n  const d = item.json || {};\n  if (!d.id || d.code) continue;\n  const pageId = d.id;\n  let title = '';\n  const props = d.properties || {};\n  for (const key of Object.keys(props)) {\n    const prop = props[key];\n    if (prop && prop.type === 'title' && Array.isArray(prop.title)) {\n      title = prop.title.map(t => t.plain_text || '').join('').trim();\n      if (title) break;\n    }\n  }\n  projectMap[pageId] = title || 'Unnamed Project';\n}\n\nreturn [{json: {projectMap}}];"
+      },
+      "id": "build_project_map",
+      "name": "Build Project Name Map",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge_projects_tasks",
+      "name": "Merge Projects + Tasks",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2016,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction todayInTimezone(tz) {\n  const parts = new Intl.DateTimeFormat('en-CA', {timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(new Date());\n  const y = parts.find(p => p.type === 'year')?.value || '1970';\n  const m = parts.find(p => p.type === 'month')?.value || '01';\n  const d = parts.find(p => p.type === 'day')?.value || '01';\n  return `${y}-${m}-${d}`;\n}\n\nfunction extractRichText(val) {\n  if (val == null) return '';\n  if (typeof val === 'string') return val.trim();\n  if (Array.isArray(val)) return val.map(t => (t && t.text && t.text.content) ? t.text.content : '').join('').trim();\n  if (val && typeof val === 'object' && Array.isArray(val.rich_text)) return val.rich_text.map(t => (t && t.text && t.text.content) ? t.text.content : '').join('').trim();\n  return String(val).trim();\n}\n\nfunction extractProjectLinks(val, projectMap) {\n  if (val == null) return [];\n  let list = [];\n  if (Array.isArray(val)) list = val;\n  else if (val && Array.isArray(val.relation)) list = val.relation;\n  return list.map(r => {\n    const id = (r && r.id) ? r.id : (typeof r === 'string' ? r : '');\n    if (!id) return null;\n    const name = projectMap[id] || 'Project';\n    const clean = id.replace(/-/g, '');\n    return clean ? { name, url: `https://www.notion.so/${clean}` } : null;\n  }).filter(Boolean);\n}\n\nfunction dueBonus(d) {\n  if (!d) return 0;\n  try { const diff = (new Date(d) - new Date()) / (1000 * 60 * 60 * 24); return diff <= 1 ? 10 : diff <= 3 ? 6 : 0; } catch (_) { return 0; }\n}\n\nfunction priorityBonus(p) {\n  const txt = String(p || '').toLowerCase();\n  if (txt.includes('urgent') || txt.includes('high')) return 8;\n  if (txt.includes('medium') || txt.includes('meduim')) return 4;\n  return 1;\n}\n\nfunction sortByRankDesc(a, b) {\n  if (b.rank !== a.rank) return b.rank - a.rank;\n  return (b.ease_score || 0) - (a.ease_score || 0);\n}\n\nconst projectMap = {};\nfor (const item of items) {\n  if (item.json && item.json.projectMap) { Object.assign(projectMap, item.json.projectMap); break; }\n}\n\nconst rawCandidates = items.map(i => i.json || {}).filter(d => d.id && ((d.property_status || '') !== 'Done')).map(d => {\n  const dueDate = d.property_due_date;\n  const pageId = d.id || '';\n  const notionId = pageId.replace(/-/g, '');\n  const task = {\n    page_id: pageId,\n    task_name: String(d.property_task_name || d.name || '').trim(),\n    task_description: extractRichText(d.property_notes ?? d.notes),\n    project_links: extractProjectLinks(d.property_project_related, projectMap),\n    ease_score: d.property_ai_ease_score || 0,\n    confidence: d.property_ai_confidence || 0,\n    estimated_effort_minutes: d.property_ai_effort_minutes || 0,\n    due_date: typeof dueDate === 'object' && dueDate ? dueDate.start || '' : (dueDate || ''),\n    priority: d.property_propriety || '',\n    notion_link: notionId ? `https://www.notion.so/${notionId}` : '',\n  };\n  task.rank = (task.ease_score || 0) + dueBonus(task.due_date) + priorityBonus(task.priority);\n  return task;\n});\n\nconst dedupMap = new Map();\nfor (const t of rawCandidates) {\n  const fallback = (t.task_name || '').toLowerCase().trim();\n  const key = t.page_id ? `id:${t.page_id}` : `name:${fallback}`;\n  if (!key || key === 'name:') continue;\n  const existing = dedupMap.get(key);\n  if (!existing || (t.rank || 0) > (existing.rank || 0)) dedupMap.set(key, t);\n}\n\nconst candidates = Array.from(dedupMap.values()).filter(t => t.page_id);\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.dailyTaskState || typeof staticData.dailyTaskState !== 'object') staticData.dailyTaskState = {};\nif (!staticData.dailyTaskState.sentByPageId || typeof staticData.dailyTaskState.sentByPageId !== 'object') staticData.dailyTaskState.sentByPageId = {};\n\nconst sentByPageId = staticData.dailyTaskState.sentByPageId;\nconst today = todayInTimezone('Europe/Dublin');\n\nconst carryOver = [];\nconst fresh = [];\n\nfor (const t of candidates) {\n  const prior = sentByPageId[t.page_id];\n  const wasSentBeforeToday = !!(prior && prior.lastSentDate && prior.lastSentDate < today);\n  if (wasSentBeforeToday) carryOver.push(t);\n  else fresh.push(t);\n}\n\ncarryOver.sort(sortByRankDesc);\nfresh.sort(sortByRankDesc);\n\nconst carryOverIds = new Set(carryOver.map(t => t.page_id));\n\nconst selected = [];\nconst selectedIds = new Set();\n\nfor (const t of carryOver) { if (selected.length >= 5) break; if (selectedIds.has(t.page_id)) continue; selected.push(t); selectedIds.add(t.page_id); }\nfor (const t of fresh) { if (selected.length >= 5) break; if (selectedIds.has(t.page_id)) continue; selected.push(t); selectedIds.add(t.page_id); }\n\nfor (const t of selected) {\n  const prev = sentByPageId[t.page_id] || {};\n  sentByPageId[t.page_id] = { lastSentDate: today, sentCount: Number(prev.sentCount || 0) + 1, lastTaskName: t.task_name || '', updatedAt: new Date().toISOString() };\n}\n\nconst activeIds = new Set(candidates.map(t => t.page_id));\nfor (const pageId of Object.keys(sentByPageId)) { if (!activeIds.has(pageId)) delete sentByPageId[pageId]; }\n\nconst carryCount = selected.filter(t => carryOverIds.has(t.page_id)).length;\nconst lines = selected.map((t, i) => `${i + 1}. ${t.task_name} - score ${t.ease_score} - ${t.estimated_effort_minutes} min`).join('\\n');\nconst summary = selected.length > 0 ? `Today's recommended tasks (${selected.length}/5, carry-over: ${carryCount}):\\n${lines}` : 'No recommended tasks today.';\n\nconst selectedWithFlags = selected.map(t => ({...t, _carry_over: carryOverIds.has(t.page_id)}));\nreturn [{ json: { summary, easy_tasks: selectedWithFlags, total_easy: selectedWithFlags.length, carry_over_count: carryCount, fresh_count: Math.max(0, selectedWithFlags.length - carryCount), selection_date: today } }];"
+      },
+      "id": "code_aggregate_1",
+      "name": "Aggregate Easy Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "[REDACTED]",
+          "mode": "id"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "notion_projects_1",
+      "name": "Notion Get My Projects",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        544
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst projects = items\n  .map(item => {\n    const d = item.json || {};\n    const rawStatus = (d.property_status || d['property_project_status'] || d['property_status_1'] || '').trim();\n    const name = (d.property_name || d.property_project_name || d.property_title || d.name || '').trim() || 'Unnamed Project';\n    const pageId = (d.id || '').replace(/-/g, '');\n    const notionUrl = pageId ? `https://www.notion.so/${pageId}` : '#';\n    return { name, status: rawStatus, notionUrl, page_id: d.id || '' };\n  })\n  .filter(p => {\n    const s = p.status.toLowerCase();\n    return s.includes('in progress') || s === 'in_progress';\n  });\n\nreturn [{ json: { in_progress_projects: projects } }];\n"
+      },
+      "id": "code_extract_projects_1",
+      "name": "Extract In Progress Projects",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge_pre_summary",
+      "name": "Merge Tasks + Projects",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2464,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "[REDACTED]",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "timeMin",
+              "value": "[REDACTED]"
+            },
+            {
+              "name": "timeMax",
+              "value": "[REDACTED]"
+            },
+            {
+              "name": "singleEvents",
+              "value": "true"
+            },
+            {
+              "name": "orderBy",
+              "value": "[REDACTED]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "gcal_today",
+      "name": "Get Today Calendar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        784
+      ],
+      "credentials": {},
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst d = (item && item.json) ? item.json : {};\nconst tz = 'Europe/Dublin';\n\nconst rawItems = Array.isArray(d.items) ? d.items : (d.error ? [] : []);\nconst events = [];\nfor (const ev of rawItems) {\n  if (!ev || !ev.start) continue;\n  const startStr = ev.start.dateTime || ev.start.date;\n  const endStr = (ev.end && (ev.end.dateTime || ev.end.date)) || startStr;\n  if (!startStr) continue;\n  const start = new Date(startStr);\n  const end = new Date(endStr);\n  if (!isNaN(start) && !isNaN(end) && end > start) {\n    events.push({ summary: ev.summary || 'Busy', start, end });\n  }\n}\n\nevents.sort((a, b) => a.start - b.start);\n\nconst todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });\nconst dayStart = new Date(todayStr + 'T08:00:00');\nconst dayEnd = new Date(todayStr + 'T20:00:00');\nlet cursor = new Date(Math.max(dayStart.getTime(), Date.now()));\n\nconst fmt = (dt) => dt.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit', timeZone: tz });\n\nconst freeSlots = [];\nfor (const ev of events) {\n  if (ev.end <= cursor) continue;\n  if (ev.start > cursor) {\n    const mins = Math.round((ev.start - cursor) / 60000);\n    if (mins >= 30) freeSlots.push({ from: fmt(cursor), to: fmt(ev.start), minutes: mins });\n  }\n  if (ev.end > cursor) cursor = new Date(ev.end);\n}\nif (cursor < dayEnd) {\n  const mins = Math.round((dayEnd - cursor) / 60000);\n  if (mins >= 30) freeSlots.push({ from: fmt(cursor), to: fmt(dayEnd), minutes: mins });\n}\n\nconst calendar_summary = d.error\n  ? 'Calendar unavailable (connect Google Calendar credential in n8n)'\n  : freeSlots.length > 0\n    ? freeSlots.map(s => s.from + '\\u2013' + s.to + ' (' + s.minutes + ' min free)').join(', ')\n    : events.length > 0 ? 'Fully booked today \\u2014 no free slots' : 'No events today \\u2014 full day available';\n\nreturn [{ json: { free_slots: freeSlots, calendar_summary, event_count: events.length } }];"
+      },
+      "id": "code_cal_slots",
+      "name": "Build Calendar Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://wttr.in/Dublin?format=j1",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "http_weather",
+      "name": "Fetch Weather",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        1024
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst d = (item && item.json) ? item.json : {};\nlet weather_summary = 'Weather data unavailable';\ntry {\n  if (d.current_condition && d.current_condition[0]) {\n    const c = d.current_condition[0];\n    const desc = (c.weatherDesc && c.weatherDesc[0] && c.weatherDesc[0].value) || 'Unknown';\n    const temp = c.temp_C || '?';\n    const feels = c.FeelsLikeC || '?';\n    const humidity = c.humidity || '?';\n    const wind = c.windspeedKmph || '?';\n    weather_summary = desc + ', ' + temp + '\\u00b0C (feels like ' + feels + '\\u00b0C), Humidity: ' + humidity + '%, Wind: ' + wind + ' km/h';\n    if (d.weather && d.weather[0]) {\n      const w = d.weather[0];\n      weather_summary += ' | High: ' + (w.maxtempC || temp) + '\\u00b0C, Low: ' + (w.mintempC || temp) + '\\u00b0C';\n    }\n  } else if (d.error) {\n    weather_summary = 'Weather unavailable';\n  }\n} catch(e) { weather_summary = 'Could not parse weather'; }\nreturn [{ json: { weather_summary } }];"
+      },
+      "id": "code_weather_parse",
+      "name": "Parse Weather",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://tasks.googleapis.com/tasks/v1/lists/@default/tasks",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "[REDACTED]",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "showCompleted",
+              "value": "false"
+            },
+            {
+              "name": "showHidden",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http_gtasks",
+      "name": "Fetch Google Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        1264
+      ],
+      "credentials": {},
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst d = (item && item.json) ? item.json : {};\nconst google_task_map = {};\ntry {\n  const rawItems = Array.isArray(d.items) ? d.items : [];\n  for (const task of rawItems) {\n    if (!task || !task.title) continue;\n    const key = task.title.toLowerCase().trim();\n    if (key) google_task_map[key] = task.webViewLink || 'https://tasks.google.com/';\n  }\n} catch(e) {}\nreturn [{ json: { google_task_map } }];"
+      },
+      "id": "code_gtask_map",
+      "name": "Build Google Task Map",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        1264
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge_with_calendar",
+      "name": "Merge + Calendar",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2688,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge_with_weather",
+      "name": "Merge + Weather",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2944,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge_with_gtasks",
+      "name": "Merge + GTasks",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        3200,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst d = item.json || {};\n\nconst easy_tasks = d.easy_tasks || [];\nconst total_easy = d.total_easy || 0;\nconst carry_over_count = d.carry_over_count || 0;\nconst in_progress_projects = d.in_progress_projects || [];\nconst free_slots = d.free_slots || [];\nconst calendar_summary = d.calendar_summary || 'Calendar not available';\nconst weather_summary = d.weather_summary || 'Weather not available';\nconst google_task_map = d.google_task_map || {};\n\nconst escHtml = (s) => {\n  if (s == null) return '';\n  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');\n};\n\n// Time slot matching with slot advancement — each task gets a sequential unique time\nconst matchedSlots = {};\nif (free_slots.length > 0) {\n  const avail = free_slots.map(s => {\n    const parts = (s.from || '08:00').split(':').map(Number);\n    return { ...s, fromMins: (parts[0]||8)*60 + (parts[1]||0) };\n  });\n  const byEffort = [...easy_tasks].sort((a,b) => (a.estimated_effort_minutes||30)-(b.estimated_effort_minutes||30));\n  for (const task of byEffort) {\n    const need = task.estimated_effort_minutes || 30;\n    const idx = avail.findIndex(s => s.minutes >= need);\n    if (idx >= 0) {\n      const sl = avail[idx];\n      const pad = n => String(n).padStart(2,'0');\n      const sh = Math.floor(sl.fromMins/60), sm = sl.fromMins%60;\n      const em = sl.fromMins + need;\n      const eh = Math.floor(em/60), emm = em%60;\n      matchedSlots[task.page_id] = pad(sh)+':'+pad(sm)+'–'+pad(eh)+':'+pad(emm);\n      avail[idx] = {...sl, fromMins: em, minutes: sl.minutes - need};\n    }\n  }\n}\n\nconst today = new Date().toLocaleDateString('en-IE', {weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'Europe/Dublin'});\nconst freshCount = Math.max(0, total_easy - carry_over_count);\n\nlet highlights = 'You have <strong>' + total_easy + ' recommended task' + (total_easy !== 1 ? 's' : '') + '</strong> today';\nif (carry_over_count > 0) highlights += ' &mdash; <strong>' + carry_over_count + '</strong> still pending from yesterday';\nif (freshCount > 0) highlights += ', <strong>' + freshCount + ' new</strong>';\nhighlights += '.';\n\nconst calHtml = free_slots.length > 0\n  ? free_slots.map(s => '&bull; ' + escHtml(s.from) + '&ndash;' + escHtml(s.to) + ' (' + s.minutes + ' min free)').join('<br>')\n  : escHtml(calendar_summary);\n\nconst tasksHtml = easy_tasks.length > 0\n  ? easy_tasks.map((t, i) => {\n      const name = escHtml(t.task_name || 'Task');\n      const effort = t.estimated_effort_minutes || 0;\n      const score = t.ease_score || 0;\n      const notionLink = escHtml(t.notion_link || '#');\n      const due = t.due_date ? ' &middot; Due: ' + escHtml(t.due_date) : '';\n      const slot = matchedSlots[t.page_id] ? '<br><span style=\"color:#35d0a6;font-size:13px;\">&#128336; Suggested: ' + matchedSlots[t.page_id] + '</span>' : '';\n      const badge = t._carry_over ? ' <span style=\"background:#ff6b6b;color:#fff;font-size:11px;padding:2px 6px;border-radius:3px;\">NOT DONE YET</span>' : '';\n      const projLinks = (t.project_links || []).map(lk => {\n        const href = typeof lk === 'string' ? lk : (lk.url || '#');\n        const label = typeof lk === 'string' ? 'Project' : (lk.name || 'Project');\n        return '<a href=\"' + escHtml(href) + '\" style=\"color:#35d0a6;\">' + escHtml(label) + '</a>';\n      }).join(', ');\n      const proj = projLinks ? '<br><span style=\"color:#aaa;font-size:12px;\">&#128193; ' + projLinks + '</span>' : '';\n      const taskKey = (t.task_name || '').toLowerCase().trim();\n      const gTaskUrl = google_task_map[taskKey];\n      const gTaskLink = gTaskUrl\n        ? '<a href=\"' + escHtml(gTaskUrl) + '\" style=\"color:#4285f4;font-size:13px;text-decoration:none;margin-left:12px;\">&#9989; Google Tasks &rarr;</a>'\n        : '';\n      return '<div style=\"padding:10px 0;border-bottom:1px solid #2a2a2a;\"><strong style=\"font-size:15px;color:#ffffff;\">' + (i+1) + '. ' + name + badge + '</strong><br><span style=\"color:#aaaaaa;font-size:13px;\">Ease: ' + score + ' &middot; ~' + effort + ' min' + due + '</span>' + slot + proj + '<br><a href=\"' + notionLink + '\" style=\"color:#35d0a6;font-size:13px;text-decoration:none;\">Open in Notion &rarr;</a>' + gTaskLink + '</div>';\n    }).join('')\n  : '<p style=\"color:#aaaaaa;\">No recommended tasks today.</p>';\n\nconst ctaUrl = 'https://www.notion.so/danielmilad/e0fe791a93f842669784acee8fc543c5';\n\nconst summaryHtml = '<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html dir=\"ltr\" xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta charset=\"UTF-8\"><meta content=\"width=device-width, initial-scale=1\" name=\"viewport\"><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"><title>Daily Update</title><style type=\"text/css\">body,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}table,td{mso-table-lspace:0pt;mso-table-rspace:0pt}body{margin:0;padding:0;width:100%!important}body,.es-wrapper-color{background-color:#efefef;font-family:Montserrat,Helvetica Neue,Arial,sans-serif}.es-wrapper{width:100%;table-layout:fixed!important}h1{font-size:28px;font-weight:700;line-height:1.3;margin:0;color:#333}h2{font-size:20px;font-weight:700;line-height:1.3;margin:0;color:#333}p{font-size:15px;font-weight:400;line-height:1.6;margin:0;color:#555}.es-button{display:inline-block;background:#35d0a6;color:#fff!important;font-size:16px;font-weight:600;text-decoration:none;padding:12px 30px;border-radius:8px}.logo-box{border:2px solid #999;border-radius:15px;background:#fff;padding:10px;text-align:center}@media only screen and (max-width:600px){h1{font-size:24px!important}}</style></head><body style=\"margin:0;padding:0;\"><div style=\"background-color:#efefef;\"><table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;\"><tbody><tr><td valign=\"top\" style=\"padding:20px 0;\"><table cellspacing=\"0\" cellpadding=\"0\" align=\"center\" width=\"560\" style=\"background-color:#fff;border-collapse:collapse;margin:0 auto;\"><tbody><tr><td align=\"center\" style=\"padding:20px;\"><table cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"border:2px solid #999;border-radius:15px;background:#fff;padding:10px;text-align:center;\"><span style=\"font-size:22px;font-weight:700;color:#181b1c;\">&#9728; DAILY</span></td></tr></table></td></tr><tr><td align=\"center\" style=\"padding:20px 40px 40px 40px;\"><h1>Good Morning!</h1><p style=\"padding-top:15px;\">Here&#39;s your daily briefing for ' + escHtml(today) + '.</p></td></tr><tr><td style=\"background-color:#181b1c;padding:30px 20px;\"><h2 style=\"color:#fff;text-align:center;\">Today&#39;s Highlights</h2><p style=\"color:#fff;text-align:center;padding:20px 0;\">' + highlights + '</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:10px 0;\"><hr style=\"border:none;border-top:1px solid #333;margin:0;\"></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:20px 0 10px 0;\"><h2 style=\"color:#35d0a6;font-size:16px;\">&#128197; Calendar</h2></td></tr><tr><td><p style=\"color:#fff;\">' + calHtml + '</p></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:10px 0;\"><hr style=\"border:none;border-top:1px solid #333;margin:0;\"></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:20px 0 10px 0;\"><h2 style=\"color:#35d0a6;font-size:16px;\">&#9989; Tasks</h2></td></tr><tr><td>' + tasksHtml + '</td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:10px 0;\"><hr style=\"border:none;border-top:1px solid #333;margin:0;\"></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:20px 0 10px 0;\"><h2 style=\"color:#35d0a6;font-size:16px;\">&#127780; Weather</h2></td></tr><tr><td><p style=\"color:#fff;\">' + escHtml(weather_summary) + '</p></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td align=\"center\" style=\"padding:30px 0 10px 0;\"><a href=\"' + ctaUrl + '\" target=\"_blank\" style=\"display:inline-block;background:#35d0a6;color:#fff;font-size:16px;font-weight:600;text-decoration:none;padding:12px 30px;border-radius:8px;\">Open Notion Tasks</a></td></tr></table></td></tr></tbody></table><table align=\"center\" cellpadding=\"0\" cellspacing=\"0\" width=\"560\" style=\"border-collapse:collapse;margin:0 auto;\"><tbody><tr><td align=\"center\" style=\"padding:30px 20px;\"><h2 style=\"color:#999;\">Have a great day!</h2><p style=\"color:#999;padding-top:10px;\">Reply to this email if anything needs attention.</p></td></tr></tbody></table></td></tr></tbody></table></div></body></html>';\n\nreturn [{ json: { summary: total_easy + ' tasks today (' + carry_over_count + ' carry-over)', summary_html: summaryHtml, easy_tasks, total_easy, in_progress_projects, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "code_summary_1",
+      "name": "Daily Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3424,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "danielmilad3621@gmail.com",
+        "subject": "={{ 'Daily Easy Tasks — ' + new Date().toLocaleDateString('en-IE', {weekday:'long', day:'numeric', month:'short', timeZone:'Europe/Dublin'}) }}",
+        "message": "={{ $json.summary_html }}",
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Send Summary by Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3648,
+        512
+      ],
+      "webhookId": "[REDACTED]",
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "content": "## Daily Easy Task Recommender v3\n\n**Runs:** Every day at 6am (Europe/Dublin)\n\n**Features:**\n- Google Tasks matching: tasks found in Google Tasks show a blue link\n- Google Calendar: free time slots with sequential per-task time suggestions\n- Weather: Dublin weather summary\n- Branded HTML email with carry-over NOT DONE YET badge\n\n**Setup required:**\n1. Google Calendar: already connected\n2. Google Tasks: open 'Fetch Google Tasks' node → connect a googleTasksOAuth2Api credential\n\n**Critical:** Split In Batches port 0 → Notion Get Easy Tasks, port 1 → Build Ollama Prompt",
+        "height": 340,
+        "width": 600,
+        "color": 3
+      },
+      "id": "desc_note",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        -112
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Notion Get Tasks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notion Get My Projects",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Today Calendar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Weather",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Google Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion Get Tasks": {
+      "main": [
+        [
+          {
+            "node": "Normalize Task Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Task Data": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid Tasks": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Notion Get Easy Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Ollama Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Ollama Prompt": {
+      "main": [
+        [
+          {
+            "node": "Merge Task and Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Merge Task and Response",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Task and Response": {
+      "main": [
+        [
+          {
+            "node": "Parse Ollama Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Ollama Response": {
+      "main": [
+        [
+          {
+            "node": "Build Notion Update Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notion Update Body": {
+      "main": [
+        [
+          {
+            "node": "Update Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Notion Page": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion Get Easy Tasks": {
+      "main": [
+        [
+          {
+            "node": "Extract Project IDs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Projects + Tasks",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Extract Project IDs": {
+      "main": [
+        [
+          {
+            "node": "Fetch Project Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Project Page": {
+      "main": [
+        [
+          {
+            "node": "Build Project Name Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Project Name Map": {
+      "main": [
+        [
+          {
+            "node": "Merge Projects + Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Projects + Tasks": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Easy Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Easy Tasks": {
+      "main": [
+        [
+          {
+            "node": "Merge Tasks + Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion Get My Projects": {
+      "main": [
+        [
+          {
+            "node": "Extract In Progress Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract In Progress Projects": {
+      "main": [
+        [
+          {
+            "node": "Merge Tasks + Projects",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Tasks + Projects": {
+      "main": [
+        [
+          {
+            "node": "Merge + Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Today Calendar": {
+      "main": [
+        [
+          {
+            "node": "Build Calendar Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Calendar Summary": {
+      "main": [
+        [
+          {
+            "node": "Merge + Calendar",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge + Calendar": {
+      "main": [
+        [
+          {
+            "node": "Merge + Weather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weather": {
+      "main": [
+        [
+          {
+            "node": "Parse Weather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Weather": {
+      "main": [
+        [
+          {
+            "node": "Merge + Weather",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge + Weather": {
+      "main": [
+        [
+          {
+            "node": "Merge + GTasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Google Tasks": {
+      "main": [
+        [
+          {
+            "node": "Build Google Task Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Google Task Map": {
+      "main": [
+        [
+          {
+            "node": "Merge + GTasks",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge + GTasks": {
+      "main": [
+        [
+          {
+            "node": "Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Summary by Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Europe/Dublin",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "[REDACTED]",
+  "activeVersionId": "[REDACTED]",
+  "versionCounter": 126,
+  "triggerCount": 1,
+  "shared": [],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-24T09:16:24.000Z",
+    "createdAt": "2026-03-23T14:51:50.063Z",
+    "versionId": "[REDACTED]",
+    "workflowId": "Ww7xc3FuKKR8hYj1",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "triggerAtHour": 6
+              }
+            ]
+          }
+        },
+        "id": "schedule_trigger_1",
+        "name": "Schedule Trigger",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          240,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "databasePage",
+          "operation": "getAll",
+          "databaseId": {
+            "__rl": true,
+            "value": "[REDACTED]",
+            "mode": "list",
+            "cachedResultName": "Task list",
+            "cachedResultUrl": "[REDACTED]"
+          },
+          "returnAll": true,
+          "options": {}
+        },
+        "id": "notion_fetch_1",
+        "name": "Notion Get Tasks",
+        "type": "n8n-nodes-base.notion",
+        "typeVersion": 2.2,
+        "position": [
+          464,
+          304
+        ],
+        "credentials": {}
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\n\nconst normalized = items\n  .filter(item => {\n    const d = item.json || {};\n    const taskName = (d.property_task_name || d.name || '').trim();\n    const rawStatus = (d.property_status || '').trim();\n    const status = rawStatus.toLowerCase();\n    const allowed = status === '' || status === 'not started' || status === 'in progress';\n    return taskName !== '' && allowed;\n  })\n  .map(item => {\n    const d = item.json || {};\n    const extractDate = (v) => {\n      if (!v) return '';\n      if (typeof v === 'object' && v.start) return v.start;\n      if (typeof v === 'string') return v;\n      return '';\n    };\n    return {\n      json: {\n        page_id: d.id,\n        task_name: (d.property_task_name || d.name || '').trim(),\n        status: d.property_status || 'Not started',\n        notes: d.property_notes || '',\n        due_date: extractDate(d.property_due_date),\n        scheduled_start: extractDate(d.property_scheduled_start),\n        scheduled_end: extractDate(d.property_scheduled_end),\n        priority: d.property_propriety || '',\n        project_related_ids: Array.isArray(d.property_project_related) ? d.property_project_related : [],\n        created_time: d.property_creation_date || ''\n      }\n    };\n  });\n\nreturn normalized.length > 0 ? normalized : [{ json: { _empty: true } }];\n"
+        },
+        "id": "code_normalize_1",
+        "name": "Normalize Task Data",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          688,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose"
+            },
+            "conditions": [
+              {
+                "id": "cond1",
+                "leftValue": "={{ $json._empty }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "notEquals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "filter_empty_1",
+        "name": "Filter Valid Tasks",
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2,
+        "position": [
+          912,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "batchSize": 10,
+          "options": {}
+        },
+        "id": "split_batches_1",
+        "name": "Split In Batches",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          1120,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const item = $input.item;\nif (!item || !item.json) return {json: {_skip: true}};\nconst task = item.json;\n\nconst userPrompt = `Evaluate this Notion task and determine if it is easy to complete today.\\n\\nTask name: ${task.task_name || 'Untitled'}\\nStatus: ${task.status || 'Not started'}\\nNotes: ${task.notes || 'None'}\\nDue date: ${task.due_date || 'Not set'}\\nPriority: ${task.priority || 'Not set'}\\n\\nRules:\\n- Prefer tasks that are specific and actionable.\\n- Penalize vague, broad, or blocked tasks.\\n- Penalize tasks requiring deep work longer than 90 minutes.\\n\\nRespond with ONLY a JSON object:\\n{\"easy_today\": boolean, \"ease_score\": 0-100, \"estimated_effort_minutes\": number, \"confidence\": 0-100, \"reason\": \"string\", \"next_action\": \"string\", \"blockers\": []}`;\n\nreturn { json: { ...task, _userPrompt: userPrompt, chatInput: userPrompt } };"
+        },
+        "id": "code_build_prompt_1",
+        "name": "Build Ollama Prompt",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1344,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ $json._userPrompt }}",
+          "batching": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.chainLlm",
+        "typeVersion": 1.9,
+        "position": [
+          1488,
+          304
+        ],
+        "id": "[REDACTED]",
+        "name": "Basic LLM Chain",
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "model": "qwen2.5:1.5b",
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+        "typeVersion": 1,
+        "position": [
+          1472,
+          96
+        ],
+        "id": "[REDACTED]",
+        "name": "Ollama Chat Model",
+        "credentials": {}
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineByPosition",
+          "options": {}
+        },
+        "id": "merge_1",
+        "name": "Merge Task and Response",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          1776,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const item = $input.item;\nif (!item || !item.json) return {json:{easy_today:false,ease_score:0,estimated_effort_minutes:0,confidence:0,reason:'No input',next_action:'',blockers:[],ai_reviewed_at:new Date().toISOString()}};\nconst merged = item.json;\nconst task = merged.page_id ? merged : {};\nconst raw = merged.output || merged.text || merged.message || merged.response || merged.content || '';\nlet result = {easy_today:false,ease_score:0,estimated_effort_minutes:0,confidence:0,reason:'AI evaluation failed',next_action:'',blockers:[]};\ntry {\n  const str = typeof raw === 'string' ? raw : JSON.stringify(raw);\n  const cleaned = str.replace(/```json\\s*/gi,'').replace(/```\\s*/g,'').trim();\n  const m = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (m) {\n    const p = JSON.parse(m[0]);\n    if (p && typeof p === 'object') {\n      result = {easy_today:!!p.easy_today,ease_score:Math.min(100,Math.max(0,parseInt(p.ease_score,10)||0)),estimated_effort_minutes:Math.max(0,parseInt(p.estimated_effort_minutes,10)||0),confidence:Math.min(100,Math.max(0,parseInt(p.confidence,10)||0)),reason:String(p.reason||'').slice(0,2000),next_action:String(p.next_action||'').slice(0,2000),blockers:Array.isArray(p.blockers)?p.blockers:[]};\n    }\n  }\n} catch(e) { result.reason = 'Parse error: '+String(e.message||'').slice(0,200); }\nreturn {json:{page_id:task.page_id,task_name:task.task_name,due_date:task.due_date,priority:task.priority,notes:task.notes,project_related_ids:task.project_related_ids,...result,ai_reviewed_at:new Date().toISOString()}};"
+        },
+        "id": "code_parse_1",
+        "name": "Parse Ollama Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2000,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const item = $input.item;\nif (!item || !item.json) return {json:{_skip:true}};\nconst d = item.json;\n\nconst properties = {\n  'AI Easy Today': {checkbox: d.easy_today === true},\n  'AI Ease Score': {number: typeof d.ease_score === 'number' ? d.ease_score : 0},\n  'AI Effort Minutes': {number: typeof d.estimated_effort_minutes === 'number' ? d.estimated_effort_minutes : 0},\n  'AI Reason': {rich_text: [{text: {content: String(d.reason||'').slice(0,2000)}}]},\n  'AI Next Action': {rich_text: [{text: {content: String(d.next_action||'').slice(0,2000)}}]},\n  'AI Confidence': {number: typeof d.confidence === 'number' ? d.confidence : 0},\n  'AI Reviewed At': {date: {start: d.ai_reviewed_at || new Date().toISOString()}}\n};\n\nif (d.easy_today === true && d.ease_score >= 45 && d.confidence >= 55) {\n  properties['AI Recommended'] = {checkbox: true};\n}\n\nreturn {json:{page_id:d.page_id,task_name:d.task_name,easy_today:d.easy_today,ease_score:d.ease_score,confidence:d.confidence,estimated_effort_minutes:d.estimated_effort_minutes,due_date:d.due_date,priority:d.priority,notes:d.notes,notionBody:{properties}}};"
+        },
+        "id": "code_build_body_1",
+        "name": "Build Notion Update Body",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2208,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "method": "PATCH",
+          "url": "=https://api.notion.com/v1/pages/{{ $json.page_id }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "[REDACTED]",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Notion-Version",
+                "value": "[REDACTED]"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.notionBody) }}",
+          "options": {}
+        },
+        "id": "http_update_1",
+        "name": "Update Notion Page",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2416,
+          304
+        ],
+        "credentials": {},
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "resource": "databasePage",
+          "operation": "getAll",
+          "databaseId": {
+            "mode": "id",
+            "value": "[REDACTED]"
+          },
+          "returnAll": true,
+          "filterType": "manual",
+          "filters": {
+            "conditions": [
+              {
+                "key": "[REDACTED]",
+                "condition": "equals",
+                "checkboxValue": true
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "notion_easy_1",
+        "name": "Notion Get Easy Tasks",
+        "type": "n8n-nodes-base.notion",
+        "typeVersion": 2.2,
+        "position": [
+          1344,
+          560
+        ],
+        "credentials": {}
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\nconst seen = new Set();\nconst result = [];\n\nfor (const item of items) {\n  const d = item.json || {};\n  const relations = d.property_project_related;\n  let list = [];\n  if (Array.isArray(relations)) list = relations;\n  else if (relations && typeof relations === 'object' && Array.isArray(relations.relation)) list = relations.relation;\n  for (const r of list) {\n    const id = (r && r.id) ? r.id : (typeof r === 'string' ? r : '');\n    if (id && !seen.has(id)) {\n      seen.add(id);\n      result.push({json: {projectId: id}});\n    }\n  }\n}\n\nreturn result.length > 0 ? result : [{json: {projectId: null}}];"
+        },
+        "id": "extract_project_ids",
+        "name": "Extract Project IDs",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1344,
+          768
+        ]
+      },
+      {
+        "parameters": {
+          "url": "=https://api.notion.com/v1/pages/{{ $json.projectId }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "[REDACTED]",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Notion-Version",
+                "value": "[REDACTED]"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "fetch_project_page",
+        "name": "Fetch Project Page",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1568,
+          768
+        ],
+        "credentials": {},
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\nconst projectMap = {};\n\nfor (const item of items) {\n  const d = item.json || {};\n  if (!d.id || d.code) continue;\n  const pageId = d.id;\n  let title = '';\n  const props = d.properties || {};\n  for (const key of Object.keys(props)) {\n    const prop = props[key];\n    if (prop && prop.type === 'title' && Array.isArray(prop.title)) {\n      title = prop.title.map(t => t.plain_text || '').join('').trim();\n      if (title) break;\n    }\n  }\n  projectMap[pageId] = title || 'Unnamed Project';\n}\n\nreturn [{json: {projectMap}}];"
+        },
+        "id": "build_project_map",
+        "name": "Build Project Name Map",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1792,
+          768
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineAll",
+          "options": {}
+        },
+        "id": "merge_projects_tasks",
+        "name": "Merge Projects + Tasks",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          2016,
+          672
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\n\nfunction todayInTimezone(tz) {\n  const parts = new Intl.DateTimeFormat('en-CA', {timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(new Date());\n  const y = parts.find(p => p.type === 'year')?.value || '1970';\n  const m = parts.find(p => p.type === 'month')?.value || '01';\n  const d = parts.find(p => p.type === 'day')?.value || '01';\n  return `${y}-${m}-${d}`;\n}\n\nfunction extractRichText(val) {\n  if (val == null) return '';\n  if (typeof val === 'string') return val.trim();\n  if (Array.isArray(val)) return val.map(t => (t && t.text && t.text.content) ? t.text.content : '').join('').trim();\n  if (val && typeof val === 'object' && Array.isArray(val.rich_text)) return val.rich_text.map(t => (t && t.text && t.text.content) ? t.text.content : '').join('').trim();\n  return String(val).trim();\n}\n\nfunction extractProjectLinks(val, projectMap) {\n  if (val == null) return [];\n  let list = [];\n  if (Array.isArray(val)) list = val;\n  else if (val && Array.isArray(val.relation)) list = val.relation;\n  return list.map(r => {\n    const id = (r && r.id) ? r.id : (typeof r === 'string' ? r : '');\n    if (!id) return null;\n    const name = projectMap[id] || 'Project';\n    const clean = id.replace(/-/g, '');\n    return clean ? { name, url: `https://www.notion.so/${clean}` } : null;\n  }).filter(Boolean);\n}\n\nfunction dueBonus(d) {\n  if (!d) return 0;\n  try { const diff = (new Date(d) - new Date()) / (1000 * 60 * 60 * 24); return diff <= 1 ? 10 : diff <= 3 ? 6 : 0; } catch (_) { return 0; }\n}\n\nfunction priorityBonus(p) {\n  const txt = String(p || '').toLowerCase();\n  if (txt.includes('urgent') || txt.includes('high')) return 8;\n  if (txt.includes('medium') || txt.includes('meduim')) return 4;\n  return 1;\n}\n\nfunction sortByRankDesc(a, b) {\n  if (b.rank !== a.rank) return b.rank - a.rank;\n  return (b.ease_score || 0) - (a.ease_score || 0);\n}\n\nconst projectMap = {};\nfor (const item of items) {\n  if (item.json && item.json.projectMap) { Object.assign(projectMap, item.json.projectMap); break; }\n}\n\nconst rawCandidates = items.map(i => i.json || {}).filter(d => d.id && ((d.property_status || '') !== 'Done')).map(d => {\n  const dueDate = d.property_due_date;\n  const pageId = d.id || '';\n  const notionId = pageId.replace(/-/g, '');\n  const task = {\n    page_id: pageId,\n    task_name: String(d.property_task_name || d.name || '').trim(),\n    task_description: extractRichText(d.property_notes ?? d.notes),\n    project_links: extractProjectLinks(d.property_project_related, projectMap),\n    ease_score: d.property_ai_ease_score || 0,\n    confidence: d.property_ai_confidence || 0,\n    estimated_effort_minutes: d.property_ai_effort_minutes || 0,\n    due_date: typeof dueDate === 'object' && dueDate ? dueDate.start || '' : (dueDate || ''),\n    priority: d.property_propriety || '',\n    notion_link: notionId ? `https://www.notion.so/${notionId}` : '',\n  };\n  task.rank = (task.ease_score || 0) + dueBonus(task.due_date) + priorityBonus(task.priority);\n  return task;\n});\n\nconst dedupMap = new Map();\nfor (const t of rawCandidates) {\n  const fallback = (t.task_name || '').toLowerCase().trim();\n  const key = t.page_id ? `id:${t.page_id}` : `name:${fallback}`;\n  if (!key || key === 'name:') continue;\n  const existing = dedupMap.get(key);\n  if (!existing || (t.rank || 0) > (existing.rank || 0)) dedupMap.set(key, t);\n}\n\nconst candidates = Array.from(dedupMap.values()).filter(t => t.page_id);\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.dailyTaskState || typeof staticData.dailyTaskState !== 'object') staticData.dailyTaskState = {};\nif (!staticData.dailyTaskState.sentByPageId || typeof staticData.dailyTaskState.sentByPageId !== 'object') staticData.dailyTaskState.sentByPageId = {};\n\nconst sentByPageId = staticData.dailyTaskState.sentByPageId;\nconst today = todayInTimezone('Europe/Dublin');\n\nconst carryOver = [];\nconst fresh = [];\n\nfor (const t of candidates) {\n  const prior = sentByPageId[t.page_id];\n  const wasSentBeforeToday = !!(prior && prior.lastSentDate && prior.lastSentDate < today);\n  if (wasSentBeforeToday) carryOver.push(t);\n  else fresh.push(t);\n}\n\ncarryOver.sort(sortByRankDesc);\nfresh.sort(sortByRankDesc);\n\nconst carryOverIds = new Set(carryOver.map(t => t.page_id));\n\nconst selected = [];\nconst selectedIds = new Set();\n\nfor (const t of carryOver) { if (selected.length >= 5) break; if (selectedIds.has(t.page_id)) continue; selected.push(t); selectedIds.add(t.page_id); }\nfor (const t of fresh) { if (selected.length >= 5) break; if (selectedIds.has(t.page_id)) continue; selected.push(t); selectedIds.add(t.page_id); }\n\nfor (const t of selected) {\n  const prev = sentByPageId[t.page_id] || {};\n  sentByPageId[t.page_id] = { lastSentDate: today, sentCount: Number(prev.sentCount || 0) + 1, lastTaskName: t.task_name || '', updatedAt: new Date().toISOString() };\n}\n\nconst activeIds = new Set(candidates.map(t => t.page_id));\nfor (const pageId of Object.keys(sentByPageId)) { if (!activeIds.has(pageId)) delete sentByPageId[pageId]; }\n\nconst carryCount = selected.filter(t => carryOverIds.has(t.page_id)).length;\nconst lines = selected.map((t, i) => `${i + 1}. ${t.task_name} - score ${t.ease_score} - ${t.estimated_effort_minutes} min`).join('\\n');\nconst summary = selected.length > 0 ? `Today's recommended tasks (${selected.length}/5, carry-over: ${carryCount}):\\n${lines}` : 'No recommended tasks today.';\n\nconst selectedWithFlags = selected.map(t => ({...t, _carry_over: carryOverIds.has(t.page_id)}));\nreturn [{ json: { summary, easy_tasks: selectedWithFlags, total_easy: selectedWithFlags.length, carry_over_count: carryCount, fresh_count: Math.max(0, selectedWithFlags.length - carryCount), selection_date: today } }];"
+        },
+        "id": "code_aggregate_1",
+        "name": "Aggregate Easy Tasks",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2240,
+          592
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "databasePage",
+          "operation": "getAll",
+          "databaseId": {
+            "__rl": true,
+            "value": "[REDACTED]",
+            "mode": "id"
+          },
+          "returnAll": true,
+          "options": {}
+        },
+        "id": "notion_projects_1",
+        "name": "Notion Get My Projects",
+        "type": "n8n-nodes-base.notion",
+        "typeVersion": 2.2,
+        "position": [
+          240,
+          544
+        ],
+        "credentials": {}
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\n\nconst projects = items\n  .map(item => {\n    const d = item.json || {};\n    const rawStatus = (d.property_status || d['property_project_status'] || d['property_status_1'] || '').trim();\n    const name = (d.property_name || d.property_project_name || d.property_title || d.name || '').trim() || 'Unnamed Project';\n    const pageId = (d.id || '').replace(/-/g, '');\n    const notionUrl = pageId ? `https://www.notion.so/${pageId}` : '#';\n    return { name, status: rawStatus, notionUrl, page_id: d.id || '' };\n  })\n  .filter(p => {\n    const s = p.status.toLowerCase();\n    return s.includes('in progress') || s === 'in_progress';\n  });\n\nreturn [{ json: { in_progress_projects: projects } }];\n"
+        },
+        "id": "code_extract_projects_1",
+        "name": "Extract In Progress Projects",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          464,
+          544
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineAll",
+          "options": {}
+        },
+        "id": "merge_pre_summary",
+        "name": "Merge Tasks + Projects",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3,
+        "position": [
+          2464,
+          512
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "[REDACTED]",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "timeMin",
+                "value": "[REDACTED]"
+              },
+              {
+                "name": "timeMax",
+                "value": "[REDACTED]"
+              },
+              {
+                "name": "singleEvents",
+                "value": "true"
+              },
+              {
+                "name": "orderBy",
+                "value": "[REDACTED]"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "gcal_today",
+        "name": "Get Today Calendar",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          240,
+          784
+        ],
+        "credentials": {},
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.first();\nconst d = (item && item.json) ? item.json : {};\nconst tz = 'Europe/Dublin';\n\nconst rawItems = Array.isArray(d.items) ? d.items : (d.error ? [] : []);\nconst events = [];\nfor (const ev of rawItems) {\n  if (!ev || !ev.start) continue;\n  const startStr = ev.start.dateTime || ev.start.date;\n  const endStr = (ev.end && (ev.end.dateTime || ev.end.date)) || startStr;\n  if (!startStr) continue;\n  const start = new Date(startStr);\n  const end = new Date(endStr);\n  if (!isNaN(start) && !isNaN(end) && end > start) {\n    events.push({ summary: ev.summary || 'Busy', start, end });\n  }\n}\n\nevents.sort((a, b) => a.start - b.start);\n\nconst todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });\nconst dayStart = new Date(todayStr + 'T08:00:00');\nconst dayEnd = new Date(todayStr + 'T20:00:00');\nlet cursor = new Date(Math.max(dayStart.getTime(), Date.now()));\n\nconst fmt = (dt) => dt.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit', timeZone: tz });\n\nconst freeSlots = [];\nfor (const ev of events) {\n  if (ev.end <= cursor) continue;\n  if (ev.start > cursor) {\n    const mins = Math.round((ev.start - cursor) / 60000);\n    if (mins >= 30) freeSlots.push({ from: fmt(cursor), to: fmt(ev.start), minutes: mins });\n  }\n  if (ev.end > cursor) cursor = new Date(ev.end);\n}\nif (cursor < dayEnd) {\n  const mins = Math.round((dayEnd - cursor) / 60000);\n  if (mins >= 30) freeSlots.push({ from: fmt(cursor), to: fmt(dayEnd), minutes: mins });\n}\n\nconst calendar_summary = d.error\n  ? 'Calendar unavailable (connect Google Calendar credential in n8n)'\n  : freeSlots.length > 0\n    ? freeSlots.map(s => s.from + '\\u2013' + s.to + ' (' + s.minutes + ' min free)').join(', ')\n    : events.length > 0 ? 'Fully booked today \\u2014 no free slots' : 'No events today \\u2014 full day available';\n\nreturn [{ json: { free_slots: freeSlots, calendar_summary, event_count: events.length } }];"
+        },
+        "id": "code_cal_slots",
+        "name": "Build Calendar Summary",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          464,
+          784
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://wttr.in/Dublin?format=j1",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "id": "http_weather",
+        "name": "Fetch Weather",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          240,
+          1024
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.first();\nconst d = (item && item.json) ? item.json : {};\nlet weather_summary = 'Weather data unavailable';\ntry {\n  if (d.current_condition && d.current_condition[0]) {\n    const c = d.current_condition[0];\n    const desc = (c.weatherDesc && c.weatherDesc[0] && c.weatherDesc[0].value) || 'Unknown';\n    const temp = c.temp_C || '?';\n    const feels = c.FeelsLikeC || '?';\n    const humidity = c.humidity || '?';\n    const wind = c.windspeedKmph || '?';\n    weather_summary = desc + ', ' + temp + '\\u00b0C (feels like ' + feels + '\\u00b0C), Humidity: ' + humidity + '%, Wind: ' + wind + ' km/h';\n    if (d.weather && d.weather[0]) {\n      const w = d.weather[0];\n      weather_summary += ' | High: ' + (w.maxtempC || temp) + '\\u00b0C, Low: ' + (w.mintempC || temp) + '\\u00b0C';\n    }\n  } else if (d.error) {\n    weather_summary = 'Weather unavailable';\n  }\n} catch(e) { weather_summary = 'Could not parse weather'; }\nreturn [{ json: { weather_summary } }];"
+        },
+        "id": "code_weather_parse",
+        "name": "Parse Weather",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          464,
+          1024
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://tasks.googleapis.com/tasks/v1/lists/@default/tasks",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "[REDACTED]",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "showCompleted",
+                "value": "false"
+              },
+              {
+                "name": "showHidden",
+                "value": "false"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "http_gtasks",
+        "name": "Fetch Google Tasks",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          240,
+          1264
+        ],
+        "credentials": {},
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.first();\nconst d = (item && item.json) ? item.json : {};\nconst google_task_map = {};\ntry {\n  const rawItems = Array.isArray(d.items) ? d.items : [];\n  for (const task of rawItems) {\n    if (!task || !task.title) continue;\n    const key = task.title.toLowerCase().trim();\n    if (key) google_task_map[key] = task.webViewLink || 'https://tasks.google.com/';\n  }\n} catch(e) {}\nreturn [{ json: { google_task_map } }];"
+        },
+        "id": "code_gtask_map",
+        "name": "Build Google Task Map",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          464,
+          1264
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineAll",
+          "options": {}
+        },
+        "id": "merge_with_calendar",
+        "name": "Merge + Calendar",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3,
+        "position": [
+          2688,
+          512
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineAll",
+          "options": {}
+        },
+        "id": "merge_with_weather",
+        "name": "Merge + Weather",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3,
+        "position": [
+          2944,
+          512
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineAll",
+          "options": {}
+        },
+        "id": "merge_with_gtasks",
+        "name": "Merge + GTasks",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3,
+        "position": [
+          3200,
+          512
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.first();\nconst d = item.json || {};\n\nconst easy_tasks = d.easy_tasks || [];\nconst total_easy = d.total_easy || 0;\nconst carry_over_count = d.carry_over_count || 0;\nconst in_progress_projects = d.in_progress_projects || [];\nconst free_slots = d.free_slots || [];\nconst calendar_summary = d.calendar_summary || 'Calendar not available';\nconst weather_summary = d.weather_summary || 'Weather not available';\nconst google_task_map = d.google_task_map || {};\n\nconst escHtml = (s) => {\n  if (s == null) return '';\n  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');\n};\n\n// Time slot matching with slot advancement — each task gets a sequential unique time\nconst matchedSlots = {};\nif (free_slots.length > 0) {\n  const avail = free_slots.map(s => {\n    const parts = (s.from || '08:00').split(':').map(Number);\n    return { ...s, fromMins: (parts[0]||8)*60 + (parts[1]||0) };\n  });\n  const byEffort = [...easy_tasks].sort((a,b) => (a.estimated_effort_minutes||30)-(b.estimated_effort_minutes||30));\n  for (const task of byEffort) {\n    const need = task.estimated_effort_minutes || 30;\n    const idx = avail.findIndex(s => s.minutes >= need);\n    if (idx >= 0) {\n      const sl = avail[idx];\n      const pad = n => String(n).padStart(2,'0');\n      const sh = Math.floor(sl.fromMins/60), sm = sl.fromMins%60;\n      const em = sl.fromMins + need;\n      const eh = Math.floor(em/60), emm = em%60;\n      matchedSlots[task.page_id] = pad(sh)+':'+pad(sm)+'–'+pad(eh)+':'+pad(emm);\n      avail[idx] = {...sl, fromMins: em, minutes: sl.minutes - need};\n    }\n  }\n}\n\nconst today = new Date().toLocaleDateString('en-IE', {weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'Europe/Dublin'});\nconst freshCount = Math.max(0, total_easy - carry_over_count);\n\nlet highlights = 'You have <strong>' + total_easy + ' recommended task' + (total_easy !== 1 ? 's' : '') + '</strong> today';\nif (carry_over_count > 0) highlights += ' &mdash; <strong>' + carry_over_count + '</strong> still pending from yesterday';\nif (freshCount > 0) highlights += ', <strong>' + freshCount + ' new</strong>';\nhighlights += '.';\n\nconst calHtml = free_slots.length > 0\n  ? free_slots.map(s => '&bull; ' + escHtml(s.from) + '&ndash;' + escHtml(s.to) + ' (' + s.minutes + ' min free)').join('<br>')\n  : escHtml(calendar_summary);\n\nconst tasksHtml = easy_tasks.length > 0\n  ? easy_tasks.map((t, i) => {\n      const name = escHtml(t.task_name || 'Task');\n      const effort = t.estimated_effort_minutes || 0;\n      const score = t.ease_score || 0;\n      const notionLink = escHtml(t.notion_link || '#');\n      const due = t.due_date ? ' &middot; Due: ' + escHtml(t.due_date) : '';\n      const slot = matchedSlots[t.page_id] ? '<br><span style=\"color:#35d0a6;font-size:13px;\">&#128336; Suggested: ' + matchedSlots[t.page_id] + '</span>' : '';\n      const badge = t._carry_over ? ' <span style=\"background:#ff6b6b;color:#fff;font-size:11px;padding:2px 6px;border-radius:3px;\">NOT DONE YET</span>' : '';\n      const projLinks = (t.project_links || []).map(lk => {\n        const href = typeof lk === 'string' ? lk : (lk.url || '#');\n        const label = typeof lk === 'string' ? 'Project' : (lk.name || 'Project');\n        return '<a href=\"' + escHtml(href) + '\" style=\"color:#35d0a6;\">' + escHtml(label) + '</a>';\n      }).join(', ');\n      const proj = projLinks ? '<br><span style=\"color:#aaa;font-size:12px;\">&#128193; ' + projLinks + '</span>' : '';\n      const taskKey = (t.task_name || '').toLowerCase().trim();\n      const gTaskUrl = google_task_map[taskKey];\n      const gTaskLink = gTaskUrl\n        ? '<a href=\"' + escHtml(gTaskUrl) + '\" style=\"color:#4285f4;font-size:13px;text-decoration:none;margin-left:12px;\">&#9989; Google Tasks &rarr;</a>'\n        : '';\n      return '<div style=\"padding:10px 0;border-bottom:1px solid #2a2a2a;\"><strong style=\"font-size:15px;color:#ffffff;\">' + (i+1) + '. ' + name + badge + '</strong><br><span style=\"color:#aaaaaa;font-size:13px;\">Ease: ' + score + ' &middot; ~' + effort + ' min' + due + '</span>' + slot + proj + '<br><a href=\"' + notionLink + '\" style=\"color:#35d0a6;font-size:13px;text-decoration:none;\">Open in Notion &rarr;</a>' + gTaskLink + '</div>';\n    }).join('')\n  : '<p style=\"color:#aaaaaa;\">No recommended tasks today.</p>';\n\nconst ctaUrl = 'https://www.notion.so/danielmilad/e0fe791a93f842669784acee8fc543c5';\n\nconst summaryHtml = '<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html dir=\"ltr\" xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta charset=\"UTF-8\"><meta content=\"width=device-width, initial-scale=1\" name=\"viewport\"><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"><title>Daily Update</title><style type=\"text/css\">body,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}table,td{mso-table-lspace:0pt;mso-table-rspace:0pt}body{margin:0;padding:0;width:100%!important}body,.es-wrapper-color{background-color:#efefef;font-family:Montserrat,Helvetica Neue,Arial,sans-serif}.es-wrapper{width:100%;table-layout:fixed!important}h1{font-size:28px;font-weight:700;line-height:1.3;margin:0;color:#333}h2{font-size:20px;font-weight:700;line-height:1.3;margin:0;color:#333}p{font-size:15px;font-weight:400;line-height:1.6;margin:0;color:#555}.es-button{display:inline-block;background:#35d0a6;color:#fff!important;font-size:16px;font-weight:600;text-decoration:none;padding:12px 30px;border-radius:8px}.logo-box{border:2px solid #999;border-radius:15px;background:#fff;padding:10px;text-align:center}@media only screen and (max-width:600px){h1{font-size:24px!important}}</style></head><body style=\"margin:0;padding:0;\"><div style=\"background-color:#efefef;\"><table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;\"><tbody><tr><td valign=\"top\" style=\"padding:20px 0;\"><table cellspacing=\"0\" cellpadding=\"0\" align=\"center\" width=\"560\" style=\"background-color:#fff;border-collapse:collapse;margin:0 auto;\"><tbody><tr><td align=\"center\" style=\"padding:20px;\"><table cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"border:2px solid #999;border-radius:15px;background:#fff;padding:10px;text-align:center;\"><span style=\"font-size:22px;font-weight:700;color:#181b1c;\">&#9728; DAILY</span></td></tr></table></td></tr><tr><td align=\"center\" style=\"padding:20px 40px 40px 40px;\"><h1>Good Morning!</h1><p style=\"padding-top:15px;\">Here&#39;s your daily briefing for ' + escHtml(today) + '.</p></td></tr><tr><td style=\"background-color:#181b1c;padding:30px 20px;\"><h2 style=\"color:#fff;text-align:center;\">Today&#39;s Highlights</h2><p style=\"color:#fff;text-align:center;padding:20px 0;\">' + highlights + '</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:10px 0;\"><hr style=\"border:none;border-top:1px solid #333;margin:0;\"></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:20px 0 10px 0;\"><h2 style=\"color:#35d0a6;font-size:16px;\">&#128197; Calendar</h2></td></tr><tr><td><p style=\"color:#fff;\">' + calHtml + '</p></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:10px 0;\"><hr style=\"border:none;border-top:1px solid #333;margin:0;\"></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:20px 0 10px 0;\"><h2 style=\"color:#35d0a6;font-size:16px;\">&#9989; Tasks</h2></td></tr><tr><td>' + tasksHtml + '</td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:10px 0;\"><hr style=\"border:none;border-top:1px solid #333;margin:0;\"></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td style=\"padding:20px 0 10px 0;\"><h2 style=\"color:#35d0a6;font-size:16px;\">&#127780; Weather</h2></td></tr><tr><td><p style=\"color:#fff;\">' + escHtml(weather_summary) + '</p></td></tr></table><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"><tr><td align=\"center\" style=\"padding:30px 0 10px 0;\"><a href=\"' + ctaUrl + '\" target=\"_blank\" style=\"display:inline-block;background:#35d0a6;color:#fff;font-size:16px;font-weight:600;text-decoration:none;padding:12px 30px;border-radius:8px;\">Open Notion Tasks</a></td></tr></table></td></tr></tbody></table><table align=\"center\" cellpadding=\"0\" cellspacing=\"0\" width=\"560\" style=\"border-collapse:collapse;margin:0 auto;\"><tbody><tr><td align=\"center\" style=\"padding:30px 20px;\"><h2 style=\"color:#999;\">Have a great day!</h2><p style=\"color:#999;padding-top:10px;\">Reply to this email if anything needs attention.</p></td></tr></tbody></table></td></tr></tbody></table></div></body></html>';\n\nreturn [{ json: { summary: total_easy + ' tasks today (' + carry_over_count + ' carry-over)', summary_html: summaryHtml, easy_tasks, total_easy, in_progress_projects, timestamp: new Date().toISOString() } }];"
+        },
+        "id": "code_summary_1",
+        "name": "Daily Summary",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3424,
+          512
+        ]
+      },
+      {
+        "parameters": {
+          "sendTo": "danielmilad3621@gmail.com",
+          "subject": "={{ 'Daily Easy Tasks — ' + new Date().toLocaleDateString('en-IE', {weekday:'long', day:'numeric', month:'short', timeZone:'Europe/Dublin'}) }}",
+          "message": "={{ $json.summary_html }}",
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "Send Summary by Gmail",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.2,
+        "position": [
+          3648,
+          512
+        ],
+        "webhookId": "[REDACTED]",
+        "credentials": {}
+      },
+      {
+        "parameters": {
+          "content": "## Daily Easy Task Recommender v3\n\n**Runs:** Every day at 6am (Europe/Dublin)\n\n**Features:**\n- Google Tasks matching: tasks found in Google Tasks show a blue link\n- Google Calendar: free time slots with sequential per-task time suggestions\n- Weather: Dublin weather summary\n- Branded HTML email with carry-over NOT DONE YET badge\n\n**Setup required:**\n1. Google Calendar: already connected\n2. Google Tasks: open 'Fetch Google Tasks' node → connect a googleTasksOAuth2Api credential\n\n**Critical:** Split In Batches port 0 → Notion Get Easy Tasks, port 1 → Build Ollama Prompt",
+          "height": 340,
+          "width": 600,
+          "color": 3
+        },
+        "id": "desc_note",
+        "name": "Workflow Description",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          32,
+          -32
+        ]
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Notion Get Tasks",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Notion Get My Projects",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Get Today Calendar",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Fetch Weather",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Fetch Google Tasks",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Notion Get Tasks": {
+        "main": [
+          [
+            {
+              "node": "Normalize Task Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Task Data": {
+        "main": [
+          [
+            {
+              "node": "Filter Valid Tasks",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Filter Valid Tasks": {
+        "main": [
+          [
+            {
+              "node": "Split In Batches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split In Batches": {
+        "main": [
+          [
+            {
+              "node": "Notion Get Easy Tasks",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Build Ollama Prompt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Ollama Prompt": {
+        "main": [
+          [
+            {
+              "node": "Merge Task and Response",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Basic LLM Chain",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Basic LLM Chain": {
+        "main": [
+          [
+            {
+              "node": "Merge Task and Response",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Ollama Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "Basic LLM Chain",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Task and Response": {
+        "main": [
+          [
+            {
+              "node": "Parse Ollama Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Ollama Response": {
+        "main": [
+          [
+            {
+              "node": "Build Notion Update Body",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Notion Update Body": {
+        "main": [
+          [
+            {
+              "node": "Update Notion Page",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Notion Page": {
+        "main": [
+          [
+            {
+              "node": "Split In Batches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Notion Get Easy Tasks": {
+        "main": [
+          [
+            {
+              "node": "Extract Project IDs",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Merge Projects + Tasks",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Extract Project IDs": {
+        "main": [
+          [
+            {
+              "node": "Fetch Project Page",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fetch Project Page": {
+        "main": [
+          [
+            {
+              "node": "Build Project Name Map",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Project Name Map": {
+        "main": [
+          [
+            {
+              "node": "Merge Projects + Tasks",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Projects + Tasks": {
+        "main": [
+          [
+            {
+              "node": "Aggregate Easy Tasks",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Aggregate Easy Tasks": {
+        "main": [
+          [
+            {
+              "node": "Merge Tasks + Projects",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Notion Get My Projects": {
+        "main": [
+          [
+            {
+              "node": "Extract In Progress Projects",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract In Progress Projects": {
+        "main": [
+          [
+            {
+              "node": "Merge Tasks + Projects",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Merge Tasks + Projects": {
+        "main": [
+          [
+            {
+              "node": "Merge + Calendar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Today Calendar": {
+        "main": [
+          [
+            {
+              "node": "Build Calendar Summary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Calendar Summary": {
+        "main": [
+          [
+            {
+              "node": "Merge + Calendar",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Merge + Calendar": {
+        "main": [
+          [
+            {
+              "node": "Merge + Weather",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fetch Weather": {
+        "main": [
+          [
+            {
+              "node": "Parse Weather",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Weather": {
+        "main": [
+          [
+            {
+              "node": "Merge + Weather",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Merge + Weather": {
+        "main": [
+          [
+            {
+              "node": "Merge + GTasks",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fetch Google Tasks": {
+        "main": [
+          [
+            {
+              "node": "Build Google Task Map",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Google Task Map": {
+        "main": [
+          [
+            {
+              "node": "Merge + GTasks",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Merge + GTasks": {
+        "main": [
+          [
+            {
+              "node": "Daily Summary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Daily Summary": {
+        "main": [
+          [
+            {
+              "node": "Send Summary by Gmail",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Daniel Salib",
+    "name": "Version 1869ed17",
+    "description": "",
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-03-24T09:16:24.232Z",
+        "id": 110,
+        "workflowId": "Ww7xc3FuKKR8hYj1",
+        "versionId": "[REDACTED]",
+        "event": "activated",
+        "userId": "[REDACTED]"
+      }
+    ]
+  }
+}

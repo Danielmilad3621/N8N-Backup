@@ -1,11 +1,433 @@
 {
-  "workflowId": "w4WjabuX9tCg9IWC",
-  "workflowName": "Notion || DB schema extractor",
-  "status": "published",
+  "updatedAt": "2026-03-10T00:00:00.927Z",
+  "createdAt": "2026-02-27T22:26:55.081Z",
+  "id": "w4WjabuX9tCg9IWC",
+  "name": "Notion || DB schema extractor",
+  "description": null,
   "active": true,
   "isArchived": false,
-  "nodeCount": 7,
-  "createdAt": "2026-02-27T22:26:55.081Z",
-  "updatedAt": "2026-03-10T00:00:00.927Z",
-  "tags": []
+  "nodes": [
+    {
+      "parameters": {
+        "path": "[REDACTED]",
+        "formTitle": "Notion Schema Extractor",
+        "formDescription": "Enter a Notion Database ID or a shareable Notion database URL to extract the schema.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Notion Database ID or URL",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "n8n Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        304
+      ],
+      "webhookId": "[REDACTED]"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json['Notion Database ID or URL'] || '';\nconst trimmed = input.trim();\n\nconst match = trimmed.match(/([a-f0-9]{32})/i);\n\nif (!match) {\n  throw new Error('Could not extract a valid Notion Database ID from the input: ' + trimmed);\n}\n\nconst databaseId = match[1].toLowerCase();\n\nreturn [{ json: { databaseId } }];"
+      },
+      "id": "[REDACTED]",
+      "name": "Extract Database ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.notion.com/v1/databases/' + $json['databaseId'] }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "[REDACTED]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "[REDACTED]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Retrieve Database1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        128,
+        304
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const db = $input.first().json;\nconst properties = db.properties || {};\n\nconst normalizedProperties = Object.keys(properties).map((key) => {\n  const prop = properties[key];\n  const type = prop.type;\n  const typeConfig = prop[type] || {};\n\n  const out = {\n    name: key,\n    type: type,\n    id: prop.id\n  };\n\n  if (['select', 'multi_select', 'status'].includes(type)) {\n    out.options = (typeConfig.options || []).map(opt => ({ name: opt.name, color: opt.color }));\n  }\n\n  if (type === 'relation') {\n    out.relatedDatabaseId = typeConfig.database_id;\n    out.relationType = typeConfig.type;\n  }\n\n  if (type === 'rollup') {\n    out.rollupProperty = typeConfig.rollup_property_name;\n    out.relationProperty = typeConfig.relation_property_name;\n    out.function = typeConfig.function;\n  }\n\n  return out;\n});\n\nreturn [{\n  json: {\n    databaseName: db.title?.[0]?.plain_text || 'Untitled',\n    databaseId: db.id,\n    propertyCount: normalizedProperties.length,\n    schema: normalizedProperties,\n    extractedAt: new Date().toLocaleString()\n  }\n}];"
+      },
+      "id": "[REDACTED]",
+      "name": "Normalize Schema1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// --- Schema Table Rows ---\nconst rows = data.schema.map(prop => {\n  let extra = '';\n  if (prop.options) {\n    extra = prop.options.map(o => `<span class=\"badge\" style=\"background:${o.color || '#ccc'}\">${o.name}</span>`).join(' ');\n  } else if (prop.relatedDatabaseId) {\n    extra = `<code>${prop.relatedDatabaseId}</code> (${prop.relationType || ''})`;\n  } else if (prop.rollupProperty) {\n    extra = `${prop.rollupProperty} via ${prop.relationProperty} → <em>${prop.function}</em>`;\n  }\n  return `\n    <tr>\n      <td><strong>${prop.name}</strong></td>\n      <td><span class=\"type-badge type-${prop.type}\">${prop.type}</span></td>\n      <td><code style=\"font-size:11px\">${prop.id}</code></td>\n      <td>${extra}</td>\n    </tr>`;\n}).join('');\n\n// --- Raw JSON output ---\nconst exportJson = JSON.stringify([{\n  databaseName: data.databaseName,\n  databaseId: data.databaseId,\n  propertyCount: data.propertyCount,\n  schema: data.schema,\n  extractedAt: data.extractedAt\n}], null, 2);\n\nconst escapedJson = exportJson\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\n// Store raw JSON in a JS-safe string for the script tag\nconst jsJson = exportJson.replace(/\\\\/g, '\\\\\\\\').replace(/`/g, '\\\\`').replace(/\\$/g, '\\\\$');\n\n// --- Full HTML Page ---\nconst html = `<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\"/>\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>\n  <title>Schema: ${data.databaseName}</title>\n  <style>\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; padding: 32px 16px; }\n    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); max-width: 900px; margin: 0 auto 32px; padding: 32px; }\n    h1 { font-size: 22px; margin-bottom: 4px; }\n    h2 { font-size: 16px; font-weight: 600; color: #444; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }\n    .meta { font-size: 13px; color: #888; margin-bottom: 24px; }\n    .meta code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 12px; }\n    table { width: 100%; border-collapse: collapse; font-size: 14px; }\n    thead tr { background: #f7f7f7; }\n    th { text-align: left; padding: 10px 12px; font-weight: 600; color: #555; border-bottom: 2px solid #eee; }\n    td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }\n    tr:hover td { background: #fafafa; }\n    .type-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; background: #e8e8e8; color: #444; }\n    .type-title { background: #dbeafe; color: #1d4ed8; }\n    .type-rich_text { background: #dcfce7; color: #166534; }\n    .type-number { background: #fef9c3; color: #854d0e; }\n    .type-select { background: #fce7f3; color: #9d174d; }\n    .type-multi_select { background: #ede9fe; color: #5b21b6; }\n    .type-date { background: #ffedd5; color: #9a3412; }\n    .type-people { background: #cffafe; color: #155e75; }\n    .type-relation { background: #f1f5f9; color: #334155; }\n    .type-rollup { background: #fef3c7; color: #92400e; }\n    .type-formula { background: #e0f2fe; color: #075985; }\n    .type-checkbox { background: #d1fae5; color: #065f46; }\n    .type-url,.type-email,.type-phone_number { background: #e0e7ff; color: #3730a3; }\n    .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; margin: 1px; color: #fff; background: #aaa; }\n    .footer { margin-top: 20px; font-size: 12px; color: #bbb; text-align: right; }\n    .json-wrapper { position: relative; }\n    .btn-row { display: flex; gap: 10px; margin-bottom: 12px; }\n    .copy-btn, .select-btn {\n      background: #6366f1;\n      color: #fff;\n      border: none;\n      border-radius: 6px;\n      padding: 8px 18px;\n      font-size: 13px;\n      font-weight: 600;\n      cursor: pointer;\n      transition: background 0.2s;\n    }\n    .select-btn { background: #475569; }\n    .copy-btn:hover { background: #4f46e5; }\n    .select-btn:hover { background: #334155; }\n    .copy-btn.copied { background: #16a34a; }\n    .copy-btn.failed { background: #dc2626; }\n    pre#json-output {\n      background: #1e1e2e;\n      color: #cdd6f4;\n      border-radius: 8px;\n      padding: 20px 16px;\n      font-size: 12.5px;\n      line-height: 1.6;\n      overflow-x: auto;\n      white-space: pre;\n      max-height: 480px;\n      overflow-y: auto;\n      user-select: all;\n    }\n  </style>\n</head>\n<body>\n\n  <!-- Schema Table Card -->\n  <div class=\"card\">\n    <h1>📋 ${data.databaseName}</h1>\n    <p class=\"meta\">\n      Database ID: <code>${data.databaseId}</code> &nbsp;·&nbsp;\n      ${data.propertyCount} properties &nbsp;·&nbsp;\n      Extracted: ${data.extractedAt}\n    </p>\n    <table>\n      <thead>\n        <tr>\n          <th>Property Name</th>\n          <th>Type</th>\n          <th>ID</th>\n          <th>Details</th>\n        </tr>\n      </thead>\n      <tbody>\n        ${rows}\n      </tbody>\n    </table>\n    <div class=\"footer\">Generated by Notion Schema Extractor · n8n</div>\n  </div>\n\n  <!-- Raw JSON Export Card -->\n  <div class=\"card\">\n    <h2>🗂️ Raw Schema JSON <span style=\"font-size:12px;font-weight:400;color:#aaa;\">— use this in your other projects</span></h2>\n    <div class=\"btn-row\">\n      <button class=\"copy-btn\" id=\"copy-btn\" onclick=\"copyJson()\">📋 Copy JSON</button>\n      <button class=\"select-btn\" onclick=\"selectJson()\">🖱️ Select All</button>\n    </div>\n    <div class=\"json-wrapper\">\n      <pre id=\"json-output\">${escapedJson}</pre>\n    </div>\n  </div>\n\n  <script>\n    var RAW_JSON = \\`${jsJson}\\`;\n\n    function showCopied() {\n      var btn = document.getElementById('copy-btn');\n      btn.textContent = '✓ Copied!';\n      btn.classList.add('copied');\n      setTimeout(function() {\n        btn.textContent = '📋 Copy JSON';\n        btn.classList.remove('copied');\n      }, 2000);\n    }\n\n    function showFailed() {\n      var btn = document.getElementById('copy-btn');\n      btn.textContent = '✗ Failed — use Select All';\n      btn.classList.add('failed');\n      setTimeout(function() {\n        btn.textContent = '📋 Copy JSON';\n        btn.classList.remove('failed');\n      }, 3000);\n    }\n\n    function selectJson() {\n      var pre = document.getElementById('json-output');\n      var range = document.createRange();\n      range.selectNodeContents(pre);\n      var sel = window.getSelection();\n      sel.removeAllRanges();\n      sel.addRange(range);\n    }\n\n    function copyJson() {\n      if (navigator.clipboard && window.isSecureContext) {\n        navigator.clipboard.writeText(RAW_JSON)\n          .then(function() { showCopied(); })\n          .catch(function() { tryExecCopy(); });\n      } else {\n        tryExecCopy();\n      }\n    }\n\n    function tryExecCopy() {\n      var textarea = document.createElement('textarea');\n      textarea.value = RAW_JSON;\n      textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';\n      document.body.appendChild(textarea);\n      textarea.focus();\n      textarea.select();\n      var ok = false;\n      try { ok = document.execCommand('copy'); } catch(e) {}\n      document.body.removeChild(textarea);\n      if (ok) { showCopied(); } else { showFailed(); selectJson(); }\n    }\n  </script>\n\n</body>\n</html>`;\n\nreturn [{ json: { html } }];"
+      },
+      "id": "[REDACTED]",
+      "name": "Build HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "[REDACTED]"
+              }
+            ]
+          }
+        }
+      },
+      "id": "[REDACTED]",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        608,
+        304
+      ]
+    },
+    {
+      "id": "desc_note",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        50
+      ],
+      "parameters": {
+        "content": "## Notion || DB Schema Extractor\n\n**Category:** Notion Utilities\n\nWeb form utility that accepts a Notion database URL/ID, retrieves the database schema via Notion API, normalizes property definitions, renders an HTML view, and returns it as a web response.\n\nUseful for inspecting and documenting Notion database structures.",
+        "width": 420,
+        "height": 240,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "n8n Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Database ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Database ID": {
+      "main": [
+        [
+          {
+            "node": "Retrieve Database1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Database1": {
+      "main": [
+        [
+          {
+            "node": "Normalize Schema1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Schema1": {
+      "main": [
+        [
+          {
+            "node": "Build HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "[REDACTED]",
+  "activeVersionId": "[REDACTED]",
+  "versionCounter": 24,
+  "triggerCount": 1,
+  "shared": [],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-10T00:00:00.929Z",
+    "createdAt": "2026-03-10T00:00:00.929Z",
+    "versionId": "[REDACTED]",
+    "workflowId": "w4WjabuX9tCg9IWC",
+    "nodes": [
+      {
+        "parameters": {
+          "path": "[REDACTED]",
+          "formTitle": "Notion Schema Extractor",
+          "formDescription": "Enter a Notion Database ID or a shareable Notion database URL to extract the schema.",
+          "formFields": {
+            "values": [
+              {
+                "fieldLabel": "Notion Database ID or URL",
+                "requiredField": true
+              }
+            ]
+          },
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "n8n Form Trigger",
+        "type": "n8n-nodes-base.formTrigger",
+        "typeVersion": 2,
+        "position": [
+          -192,
+          304
+        ],
+        "webhookId": "[REDACTED]"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json['Notion Database ID or URL'] || '';\nconst trimmed = input.trim();\n\nconst match = trimmed.match(/([a-f0-9]{32})/i);\n\nif (!match) {\n  throw new Error('Could not extract a valid Notion Database ID from the input: ' + trimmed);\n}\n\nconst databaseId = match[1].toLowerCase();\n\nreturn [{ json: { databaseId } }];"
+        },
+        "id": "[REDACTED]",
+        "name": "Extract Database ID",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -48,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ 'https://api.notion.com/v1/databases/' + $json['databaseId'] }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "[REDACTED]",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Notion-Version",
+                "value": "[REDACTED]"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "[REDACTED]",
+        "name": "Retrieve Database1",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.1,
+        "position": [
+          128,
+          304
+        ],
+        "credentials": {}
+      },
+      {
+        "parameters": {
+          "jsCode": "const db = $input.first().json;\nconst properties = db.properties || {};\n\nconst normalizedProperties = Object.keys(properties).map((key) => {\n  const prop = properties[key];\n  const type = prop.type;\n  const typeConfig = prop[type] || {};\n\n  const out = {\n    name: key,\n    type: type,\n    id: prop.id\n  };\n\n  if (['select', 'multi_select', 'status'].includes(type)) {\n    out.options = (typeConfig.options || []).map(opt => ({ name: opt.name, color: opt.color }));\n  }\n\n  if (type === 'relation') {\n    out.relatedDatabaseId = typeConfig.database_id;\n    out.relationType = typeConfig.type;\n  }\n\n  if (type === 'rollup') {\n    out.rollupProperty = typeConfig.rollup_property_name;\n    out.relationProperty = typeConfig.relation_property_name;\n    out.function = typeConfig.function;\n  }\n\n  return out;\n});\n\nreturn [{\n  json: {\n    databaseName: db.title?.[0]?.plain_text || 'Untitled',\n    databaseId: db.id,\n    propertyCount: normalizedProperties.length,\n    schema: normalizedProperties,\n    extractedAt: new Date().toLocaleString()\n  }\n}];"
+        },
+        "id": "[REDACTED]",
+        "name": "Normalize Schema1",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          320,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const data = $input.first().json;\n\n// --- Schema Table Rows ---\nconst rows = data.schema.map(prop => {\n  let extra = '';\n  if (prop.options) {\n    extra = prop.options.map(o => `<span class=\"badge\" style=\"background:${o.color || '#ccc'}\">${o.name}</span>`).join(' ');\n  } else if (prop.relatedDatabaseId) {\n    extra = `<code>${prop.relatedDatabaseId}</code> (${prop.relationType || ''})`;\n  } else if (prop.rollupProperty) {\n    extra = `${prop.rollupProperty} via ${prop.relationProperty} → <em>${prop.function}</em>`;\n  }\n  return `\n    <tr>\n      <td><strong>${prop.name}</strong></td>\n      <td><span class=\"type-badge type-${prop.type}\">${prop.type}</span></td>\n      <td><code style=\"font-size:11px\">${prop.id}</code></td>\n      <td>${extra}</td>\n    </tr>`;\n}).join('');\n\n// --- Raw JSON output ---\nconst exportJson = JSON.stringify([{\n  databaseName: data.databaseName,\n  databaseId: data.databaseId,\n  propertyCount: data.propertyCount,\n  schema: data.schema,\n  extractedAt: data.extractedAt\n}], null, 2);\n\nconst escapedJson = exportJson\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\n// Store raw JSON in a JS-safe string for the script tag\nconst jsJson = exportJson.replace(/\\\\/g, '\\\\\\\\').replace(/`/g, '\\\\`').replace(/\\$/g, '\\\\$');\n\n// --- Full HTML Page ---\nconst html = `<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\"/>\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>\n  <title>Schema: ${data.databaseName}</title>\n  <style>\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; padding: 32px 16px; }\n    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); max-width: 900px; margin: 0 auto 32px; padding: 32px; }\n    h1 { font-size: 22px; margin-bottom: 4px; }\n    h2 { font-size: 16px; font-weight: 600; color: #444; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }\n    .meta { font-size: 13px; color: #888; margin-bottom: 24px; }\n    .meta code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 12px; }\n    table { width: 100%; border-collapse: collapse; font-size: 14px; }\n    thead tr { background: #f7f7f7; }\n    th { text-align: left; padding: 10px 12px; font-weight: 600; color: #555; border-bottom: 2px solid #eee; }\n    td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }\n    tr:hover td { background: #fafafa; }\n    .type-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; background: #e8e8e8; color: #444; }\n    .type-title { background: #dbeafe; color: #1d4ed8; }\n    .type-rich_text { background: #dcfce7; color: #166534; }\n    .type-number { background: #fef9c3; color: #854d0e; }\n    .type-select { background: #fce7f3; color: #9d174d; }\n    .type-multi_select { background: #ede9fe; color: #5b21b6; }\n    .type-date { background: #ffedd5; color: #9a3412; }\n    .type-people { background: #cffafe; color: #155e75; }\n    .type-relation { background: #f1f5f9; color: #334155; }\n    .type-rollup { background: #fef3c7; color: #92400e; }\n    .type-formula { background: #e0f2fe; color: #075985; }\n    .type-checkbox { background: #d1fae5; color: #065f46; }\n    .type-url,.type-email,.type-phone_number { background: #e0e7ff; color: #3730a3; }\n    .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; margin: 1px; color: #fff; background: #aaa; }\n    .footer { margin-top: 20px; font-size: 12px; color: #bbb; text-align: right; }\n    .json-wrapper { position: relative; }\n    .btn-row { display: flex; gap: 10px; margin-bottom: 12px; }\n    .copy-btn, .select-btn {\n      background: #6366f1;\n      color: #fff;\n      border: none;\n      border-radius: 6px;\n      padding: 8px 18px;\n      font-size: 13px;\n      font-weight: 600;\n      cursor: pointer;\n      transition: background 0.2s;\n    }\n    .select-btn { background: #475569; }\n    .copy-btn:hover { background: #4f46e5; }\n    .select-btn:hover { background: #334155; }\n    .copy-btn.copied { background: #16a34a; }\n    .copy-btn.failed { background: #dc2626; }\n    pre#json-output {\n      background: #1e1e2e;\n      color: #cdd6f4;\n      border-radius: 8px;\n      padding: 20px 16px;\n      font-size: 12.5px;\n      line-height: 1.6;\n      overflow-x: auto;\n      white-space: pre;\n      max-height: 480px;\n      overflow-y: auto;\n      user-select: all;\n    }\n  </style>\n</head>\n<body>\n\n  <!-- Schema Table Card -->\n  <div class=\"card\">\n    <h1>📋 ${data.databaseName}</h1>\n    <p class=\"meta\">\n      Database ID: <code>${data.databaseId}</code> &nbsp;·&nbsp;\n      ${data.propertyCount} properties &nbsp;·&nbsp;\n      Extracted: ${data.extractedAt}\n    </p>\n    <table>\n      <thead>\n        <tr>\n          <th>Property Name</th>\n          <th>Type</th>\n          <th>ID</th>\n          <th>Details</th>\n        </tr>\n      </thead>\n      <tbody>\n        ${rows}\n      </tbody>\n    </table>\n    <div class=\"footer\">Generated by Notion Schema Extractor · n8n</div>\n  </div>\n\n  <!-- Raw JSON Export Card -->\n  <div class=\"card\">\n    <h2>🗂️ Raw Schema JSON <span style=\"font-size:12px;font-weight:400;color:#aaa;\">— use this in your other projects</span></h2>\n    <div class=\"btn-row\">\n      <button class=\"copy-btn\" id=\"copy-btn\" onclick=\"copyJson()\">📋 Copy JSON</button>\n      <button class=\"select-btn\" onclick=\"selectJson()\">🖱️ Select All</button>\n    </div>\n    <div class=\"json-wrapper\">\n      <pre id=\"json-output\">${escapedJson}</pre>\n    </div>\n  </div>\n\n  <script>\n    var RAW_JSON = \\`${jsJson}\\`;\n\n    function showCopied() {\n      var btn = document.getElementById('copy-btn');\n      btn.textContent = '✓ Copied!';\n      btn.classList.add('copied');\n      setTimeout(function() {\n        btn.textContent = '📋 Copy JSON';\n        btn.classList.remove('copied');\n      }, 2000);\n    }\n\n    function showFailed() {\n      var btn = document.getElementById('copy-btn');\n      btn.textContent = '✗ Failed — use Select All';\n      btn.classList.add('failed');\n      setTimeout(function() {\n        btn.textContent = '📋 Copy JSON';\n        btn.classList.remove('failed');\n      }, 3000);\n    }\n\n    function selectJson() {\n      var pre = document.getElementById('json-output');\n      var range = document.createRange();\n      range.selectNodeContents(pre);\n      var sel = window.getSelection();\n      sel.removeAllRanges();\n      sel.addRange(range);\n    }\n\n    function copyJson() {\n      if (navigator.clipboard && window.isSecureContext) {\n        navigator.clipboard.writeText(RAW_JSON)\n          .then(function() { showCopied(); })\n          .catch(function() { tryExecCopy(); });\n      } else {\n        tryExecCopy();\n      }\n    }\n\n    function tryExecCopy() {\n      var textarea = document.createElement('textarea');\n      textarea.value = RAW_JSON;\n      textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';\n      document.body.appendChild(textarea);\n      textarea.focus();\n      textarea.select();\n      var ok = false;\n      try { ok = document.execCommand('copy'); } catch(e) {}\n      document.body.removeChild(textarea);\n      if (ok) { showCopied(); } else { showFailed(); selectJson(); }\n    }\n  </script>\n\n</body>\n</html>`;\n\nreturn [{ json: { html } }];"
+        },
+        "id": "[REDACTED]",
+        "name": "Build HTML",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          464,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "text",
+          "responseBody": "={{ $json.html }}",
+          "options": {
+            "responseHeaders": {
+              "entries": [
+                {
+                  "name": "Content-Type",
+                  "value": "[REDACTED]"
+                }
+              ]
+            }
+          }
+        },
+        "id": "[REDACTED]",
+        "name": "Respond to Webhook",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          608,
+          304
+        ]
+      },
+      {
+        "id": "desc_note",
+        "name": "Workflow Description",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -400,
+          50
+        ],
+        "parameters": {
+          "content": "## Notion || DB Schema Extractor\n\n**Category:** Notion Utilities\n\nWeb form utility that accepts a Notion database URL/ID, retrieves the database schema via Notion API, normalizes property definitions, renders an HTML view, and returns it as a web response.\n\nUseful for inspecting and documenting Notion database structures.",
+          "width": 420,
+          "height": 240,
+          "color": 3
+        }
+      }
+    ],
+    "connections": {
+      "n8n Form Trigger": {
+        "main": [
+          [
+            {
+              "node": "Extract Database ID",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Database ID": {
+        "main": [
+          [
+            {
+              "node": "Retrieve Database1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Retrieve Database1": {
+        "main": [
+          [
+            {
+              "node": "Normalize Schema1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Schema1": {
+        "main": [
+          [
+            {
+              "node": "Build HTML",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build HTML": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Daniel Salib",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-03-10T00:00:01.022Z",
+        "id": 42,
+        "workflowId": "w4WjabuX9tCg9IWC",
+        "versionId": "[REDACTED]",
+        "event": "activated",
+        "userId": "[REDACTED]"
+      },
+      {
+        "createdAt": "2026-03-10T00:00:00.990Z",
+        "id": 41,
+        "workflowId": "w4WjabuX9tCg9IWC",
+        "versionId": "[REDACTED]",
+        "event": "deactivated",
+        "userId": "[REDACTED]"
+      }
+    ]
+  }
 }

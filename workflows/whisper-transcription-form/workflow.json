@@ -1,0 +1,248 @@
+{
+  "updatedAt": "2026-03-10T00:00:11.680Z",
+  "createdAt": "2026-03-08T23:14:28.934Z",
+  "id": "8dFpE6HWL8Y9sIqW",
+  "name": "Whisper Transcription Form",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "form",
+      "name": "Upload Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "whisper-form",
+      "parameters": {
+        "path": "whisper-transcribe",
+        "formTitle": "Whisper Transcription",
+        "formDescription": "Upload an audio/video file to transcribe with OpenAI Whisper (small model, CPU).<br><br><b>YouTube URLs:</b> May work for videos with captions. For best results, download the audio from <a href='https://cobalt.tools' target='_blank'>cobalt.tools</a> and upload it here.<br><br><em>Transcription may take 1–5 minutes on CPU.</em>",
+        "responseMode": "responseNode",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "YouTube URL",
+              "fieldType": "text",
+              "placeholder": "https://www.youtube.com/watch?v=...",
+              "requiredField": false
+            },
+            {
+              "fieldLabel": "Audio File",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".mp3,.wav,.ogg,.m4a,.mp4,.webm,.flac",
+              "requiredField": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "check_input",
+      "name": "YouTube or File?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        280,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "yt-check",
+              "leftValue": "={{ $json['YouTube URL'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "yt_transcribe",
+      "name": "Transcribe YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        -120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://whisper:8000/transcribe-url",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json['YouTube URL'] }) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "file_transcribe",
+      "name": "Transcribe File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://whisper:8000/transcribe",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "Audio File"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 600000
+        }
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Show Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ formSubmittedText: '<h3>Transcription Complete</h3><p><strong>Source:</strong> ' + ($json.source === 'youtube_captions' ? 'YouTube Captions' : 'Whisper') + '</p><p><strong>Language:</strong> ' + ($json.language || 'auto-detected') + '</p><hr><p>' + ($json.text || 'No text returned') + '</p>' }) }}"
+      }
+    },
+    {
+      "id": "[REDACTED]",
+      "name": "YouTube Not Available",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        -240
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ formSubmittedText: '<h3>YouTube Transcription Unavailable</h3><p>YouTube blocks audio downloads from this server. To transcribe a YouTube video:</p><ol><li>Go to a site like <a href=\"https://cobalt.tools\" target=\"_blank\">cobalt.tools</a></li><li>Paste your YouTube URL and download the audio</li><li>Come back here and use the <strong>Audio File</strong> upload field instead</li></ol><p>The file upload uses Whisper AI directly and works perfectly.</p><hr><p><em>URL you submitted:</em> ' + $('Upload Form').item.json['YouTube URL'] + '</p>' }) }}"
+      }
+    },
+    {
+      "id": "desc_note",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        -400
+      ],
+      "parameters": {
+        "content": "## Whisper Transcription Form\n\n**Category:** Transcription\n\nWeb form accepting either a YouTube URL or audio file upload. Routes input to local Whisper transcription service. YouTube URLs go to the YouTube transcription endpoint; file uploads go to the file transcription endpoint. Displays transcription result back to the user.\n\nKey integrations: Form Trigger, HTTP Request (Whisper API), Respond to Webhook.",
+        "width": 460,
+        "height": 260,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Upload Form": {
+      "main": [
+        [
+          {
+            "node": "YouTube or File?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube or File?": {
+      "main": [
+        [
+          {
+            "node": "Transcribe YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Transcribe File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe YouTube": {
+      "main": [
+        [
+          {
+            "node": "Show Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "YouTube Not Available",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe File": {
+      "main": [
+        [
+          {
+            "node": "Show Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "[REDACTED]",
+  "activeVersionId": null,
+  "versionCounter": 7,
+  "triggerCount": 0,
+  "shared": [],
+  "tags": [],
+  "activeVersion": null
+}

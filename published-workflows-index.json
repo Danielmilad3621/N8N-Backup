@@ -1,6 +1,70 @@
 {
-  "generatedAt": "2026-03-28T11:28:02.601Z",
+  "generatedAt": "2026-03-28T16:26:21.884Z",
   "source": "n8n automated weekly backup",
-  "workflowCount": 0,
-  "workflows": []
+  "workflowCount": 9,
+  "workflows": [
+    {
+      "workflowId": "7zK5AN7N9b0ev8Aj",
+      "workflowName": "Seed Pluralsight Courses to Notion",
+      "active": false,
+      "folder": "workflows/seed-pluralsight-courses-to-notion",
+      "file": "workflows/seed-pluralsight-courses-to-notion/workflow.json"
+    },
+    {
+      "workflowId": "8dFpE6HWL8Y9sIqW",
+      "workflowName": "Whisper Transcription Form",
+      "active": false,
+      "folder": "workflows/whisper-transcription-form",
+      "file": "workflows/whisper-transcription-form/workflow.json"
+    },
+    {
+      "workflowId": "KcdcuKTfIh7bOgIf",
+      "workflowName": "GTN - Notion ↔ Google Tasks Bidirectional Sync",
+      "active": true,
+      "folder": "workflows/gtn-notion-google-tasks-bidirectional-sync",
+      "file": "workflows/gtn-notion-google-tasks-bidirectional-sync/workflow.json"
+    },
+    {
+      "workflowId": "Ww7xc3FuKKR8hYj1",
+      "workflowName": "Daily Easy Task Recommender for Notion",
+      "active": true,
+      "folder": "workflows/daily-easy-task-recommender-for-notion",
+      "file": "workflows/daily-easy-task-recommender-for-notion/workflow.json"
+    },
+    {
+      "workflowId": "ifakdcdTa9GI4Ozg",
+      "workflowName": "Setup: Add AI Properties to Notion DB",
+      "active": false,
+      "folder": "workflows/setup-add-ai-properties-to-notion-db",
+      "file": "workflows/setup-add-ai-properties-to-notion-db/workflow.json"
+    },
+    {
+      "workflowId": "lexfyXfa6DYJqmFU",
+      "workflowName": "Weekly Workflow Backup to GitHub",
+      "active": false,
+      "folder": "workflows/weekly-workflow-backup-to-github",
+      "file": "workflows/weekly-workflow-backup-to-github/workflow.json"
+    },
+    {
+      "workflowId": "nt5MXNy0FeubWvZb8ZahW",
+      "workflowName": "Property Hunter",
+      "active": true,
+      "folder": "workflows/property-hunter",
+      "file": "workflows/property-hunter/workflow.json"
+    },
+    {
+      "workflowId": "w4WjabuX9tCg9IWC",
+      "workflowName": "Notion || DB schema extractor",
+      "active": true,
+      "folder": "workflows/notion-db-schema-extractor",
+      "file": "workflows/notion-db-schema-extractor/workflow.json"
+    },
+    {
+      "workflowId": "yxhElU3MT4cxZJWv",
+      "workflowName": "Morning Brief Advisor Final",
+      "active": false,
+      "folder": "workflows/morning-brief-advisor-final",
+      "file": "workflows/morning-brief-advisor-final/workflow.json"
+    }
+  ]
 }
