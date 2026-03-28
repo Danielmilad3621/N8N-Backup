@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-03-28T00:00:00Z",
+  "source": "n8n published workflows (active=true)",
+  "basePath": "/Users/danie/desktop/dev/N8N",
+  "workflowCount": 4,
+  "workflows": [
+    {
+      "workflowId": "KcdcuKTfIh7bOgIf",
+      "workflowName": "GTN - Notion \u2194 Google Tasks Bidirectional Sync",
+      "folder": "gtn-notion-google-tasks-bidirectional-sync-KcdcuKTfIh7bOgIf",
+      "file": "/Users/danie/desktop/dev/N8N/gtn-notion-google-tasks-bidirectional-sync-KcdcuKTfIh7bOgIf/workflow.json"
+    },
+    {
+      "workflowId": "Ww7xc3FuKKR8hYj1",
+      "workflowName": "Daily Easy Task Recommender for Notion",
+      "folder": "daily-easy-task-recommender-for-notion-Ww7xc3FuKKR8hYj1",
+      "file": "/Users/danie/desktop/dev/N8N/daily-easy-task-recommender-for-notion-Ww7xc3FuKKR8hYj1/workflow.json"
+    },
+    {
+      "workflowId": "nt5MXNy0FeubWvZb8ZahW",
+      "workflowName": "Property Hunter",
+      "folder": "property-hunter-nt5MXNy0FeubWvZb8ZahW",
+      "file": "/Users/danie/desktop/dev/N8N/property-hunter-nt5MXNy0FeubWvZb8ZahW/workflow.json"
+    },
+    {
+      "workflowId": "w4WjabuX9tCg9IWC",
+      "workflowName": "Notion || DB schema extractor",
+      "folder": "notion-db-schema-extractor-w4WjabuX9tCg9IWC",
+      "file": "/Users/danie/desktop/dev/N8N/notion-db-schema-extractor-w4WjabuX9tCg9IWC/workflow.json"
+    }
+  ]
+}
