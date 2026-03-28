@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-03-28T16:26:47.593Z",
+  "generatedAt": "2026-03-28T16:27:07.756Z",
   "source": "n8n automated weekly backup",
   "workflowCount": 9,
   "workflows": [
@@ -41,7 +41,7 @@
     {
       "workflowId": "lexfyXfa6DYJqmFU",
       "workflowName": "Weekly Workflow Backup to GitHub",
-      "active": false,
+      "active": true,
       "folder": "workflows/weekly-workflow-backup-to-github",
       "file": "workflows/weekly-workflow-backup-to-github/workflow.json"
     },
