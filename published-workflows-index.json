@@ -1,8 +1,15 @@
 {
-  "generatedAt": "2026-03-28T16:27:07.756Z",
+  "generatedAt": "2026-03-30T13:44:02.928Z",
   "source": "n8n automated weekly backup",
-  "workflowCount": 9,
+  "workflowCount": 11,
   "workflows": [
+    {
+      "workflowId": "63ZZACDuy7AWbCzT",
+      "workflowName": "GTN-A: Notion -> Google Tasks Sync",
+      "active": true,
+      "folder": "workflows/gtn-a-notion-google-tasks-sync",
+      "file": "workflows/gtn-a-notion-google-tasks-sync/workflow.json"
+    },
     {
       "workflowId": "7zK5AN7N9b0ev8Aj",
       "workflowName": "Seed Pluralsight Courses to Notion",
@@ -18,9 +25,16 @@
       "file": "workflows/whisper-transcription-form/workflow.json"
     },
     {
+      "workflowId": "DjcCMYQxGKJxWJZt",
+      "workflowName": "GTN-B: Google Tasks -> Notion Sync",
+      "active": true,
+      "folder": "workflows/gtn-b-google-tasks-notion-sync",
+      "file": "workflows/gtn-b-google-tasks-notion-sync/workflow.json"
+    },
+    {
       "workflowId": "KcdcuKTfIh7bOgIf",
       "workflowName": "GTN - Notion ↔ Google Tasks Bidirectional Sync",
-      "active": true,
+      "active": false,
       "folder": "workflows/gtn-notion-google-tasks-bidirectional-sync",
       "file": "workflows/gtn-notion-google-tasks-bidirectional-sync/workflow.json"
     },
