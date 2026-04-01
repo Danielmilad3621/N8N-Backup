@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-03-28T19:52:41.715Z",
+  "updatedAt": "2026-03-31T23:21:22.599Z",
   "createdAt": "2026-03-28T19:52:14.110Z",
   "id": "DjcCMYQxGKJxWJZt",
   "name": "GTN-B: Google Tasks -> Notion Sync",
@@ -8,14 +8,6 @@
   "isArchived": false,
   "nodes": [
     {
-      "id": "B-t1",
-      "name": "Schedule Trigger",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [
-        -1200,
-        300
-      ],
       "parameters": {
         "rule": {
           "interval": [
@@ -25,18 +17,17 @@
             }
           ]
         }
-      }
+      },
+      "id": "B-t1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1200,
+        304
+      ]
     },
     {
-      "id": "B-g1",
-      "name": "Get Google Tasks",
-      "type": "n8n-nodes-base.googleTasks",
-      "typeVersion": 1,
-      "position": [
-        -960,
-        300
-      ],
-      "credentials": {},
       "parameters": {
         "operation": "getAll",
         "task": "[REDACTED]",
@@ -45,34 +36,31 @@
           "showCompleted": true,
           "showHidden": true
         }
-      }
+      },
+      "id": "B-g1",
+      "name": "Get Google Tasks",
+      "type": "n8n-nodes-base.googleTasks",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        304
+      ],
+      "credentials": {}
     },
     {
+      "parameters": {
+        "jsCode": "return [{ json: { run: true } }];"
+      },
       "id": "B-gate",
       "name": "Run Once Gate",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         -720,
-        300
-      ],
-      "parameters": {
-        "jsCode": "return [{ json: { run: true } }];"
-      }
+        304
+      ]
     },
     {
-      "id": "B-n1",
-      "name": "Get Notion Pages",
-      "type": "n8n-nodes-base.notion",
-      "typeVersion": 2.2,
-      "position": [
-        -480,
-        300
-      ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 10000,
-      "credentials": {},
       "parameters": {
         "resource": "databasePage",
         "operation": "getAll",
@@ -85,48 +73,58 @@
         },
         "returnAll": true,
         "options": {}
-      }
+      },
+      "id": "B-n1",
+      "name": "Get Notion Pages",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -480,
+        304
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {}
     },
     {
+      "parameters": {
+        "jsCode": "const googleItems = $('Get Google Tasks').all().map(i => i.json);\nconst notionPages = $('Get Notion Pages').all().map(i => i.json);\n\nconst NOW = Date.now();\nconst DAYS_14_MS = 14 * 24 * 60 * 60 * 1000;\nconst RECENT_THRESHOLD_MS = 12 * 60 * 1000;\nconst TASKLIST_ID = 'MDk4NTUxODgzNzA1NDM2OTIxNjg6MDow';\n\nfunction safeText(v) { return (v == null ? '' : String(v)).trim(); }\nfunction normDate(d) { return d ? String(d).slice(0, 10) : null; }\nfunction statusToNotion(gs) { return gs === 'completed' ? 'Done' : 'Not started'; }\n\nfunction inScope(t) {\n  if (t.status !== 'completed') return true;\n  const updated = t.updated ? new Date(t.updated).getTime() : 0;\n  return updated && (NOW - updated <= DAYS_14_MS);\n}\n\nconst notionByGid = new Map();\nfor (const p of notionPages) {\n  const gid = safeText(p.property_google_task_id || '');\n  if (!gid) continue;\n  const existing = notionByGid.get(gid);\n  if (!existing) {\n    notionByGid.set(gid, p);\n  } else {\n    const a = new Date(existing.last_edited_time || existing.updatedAt || 0).getTime();\n    const b = new Date(p.last_edited_time || p.updatedAt || 0).getTime();\n    if (b >= a) notionByGid.set(gid, p);\n  }\n}\n\nconst out = [];\n\nfor (const g of googleItems) {\n  if (!inScope(g)) continue;\n\n  const gid = safeText(g.id);\n  const matched = notionByGid.get(gid);\n\n  if (!matched) {\n    out.push({ json: {\n      action: 'create_notion',\n      notionPageId: null,\n      googleTaskId: gid,\n      googleTasklistId: g.parent || TASKLIST_ID,\n      title: safeText(g.title) || '(Untitled)',\n      googleStatus: g.status || 'needsAction',\n      notionStatus: statusToNotion(g.status),\n      dueDate: normDate(g.due),\n      notes: safeText(g.notes),\n      webViewLink: g.webViewLink || '',\n    }});\n    continue;\n  }\n\n  const targetTitle = safeText(g.title) || '(Untitled)';\n  const targetStatus = statusToNotion(g.status);\n  const targetDue = normDate(g.due);\n  const targetTasklist = g.parent || TASKLIST_ID;\n  const targetUrl = g.webViewLink || '';\n\n  const currentTitle = safeText(matched.property_task_name || matched.name || '');\n  const currentStatus = safeText(matched.property_status || 'Not started');\n  const currentDue = (() => {\n    const d = matched.property_due_date;\n    if (d && d.start) return normDate(d.start);\n    if (typeof d === 'string' && d) return normDate(d);\n    return null;\n  })();\n  const currentTasklist = safeText(matched.property_google_tasklist_id || '');\n  const currentUrl = safeText(matched.property_google_task_url || '');\n\n  // Conflict resolution: if Google was NOT recently updated, the status\n  // mismatch is because the user changed Notion. Don't override Notion;\n  // let GTN-A handle pushing Notion -> Google instead.\n  const googleUpdatedMs = new Date(g.updated).getTime();\n  const googleRecentlyUpdated = (NOW - googleUpdatedMs) < RECENT_THRESHOLD_MS;\n\n  let effectiveNotionStatus = targetStatus;\n  if (effectiveNotionStatus !== currentStatus && !googleRecentlyUpdated) {\n    effectiveNotionStatus = currentStatus;\n  }\n\n  const changed =\n    currentTitle !== targetTitle ||\n    currentStatus !== effectiveNotionStatus ||\n    currentDue !== targetDue ||\n    currentTasklist !== targetTasklist ||\n    currentUrl !== targetUrl;\n\n  if (changed) {\n    out.push({ json: {\n      action: 'update_notion',\n      notionPageId: matched.id,\n      googleTaskId: gid,\n      googleTasklistId: targetTasklist,\n      title: targetTitle,\n      googleStatus: g.status || 'needsAction',\n      notionStatus: effectiveNotionStatus,\n      dueDate: targetDue,\n      webViewLink: targetUrl,\n    }});\n  } else {\n    out.push({ json: {\n      action: 'skip_no_change',\n      notionPageId: matched.id,\n      googleTaskId: gid,\n    }});\n  }\n}\n\nreturn out;"
+      },
       "id": "B-plan",
       "name": "Plan Google->Notion Actions",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -200,
-        300
-      ],
-      "parameters": {
-        "jsCode": "const googleItems = $('Get Google Tasks').all().map(i => i.json);\nconst notionPages = $('Get Notion Pages').all().map(i => i.json);\n\nconst NOW = Date.now();\nconst DAYS_14_MS = 14 * 24 * 60 * 60 * 1000;\nconst TASKLIST_ID = 'MDk4NTUxODgzNzA1NDM2OTIxNjg6MDow';\n\nfunction safeText(v) { return (v == null ? '' : String(v)).trim(); }\nfunction normDate(d) { return d ? String(d).slice(0, 10) : null; }\nfunction statusToNotion(gs) { return gs === 'completed' ? 'Done' : 'Not started'; }\n\nfunction inScope(t) {\n  if (t.status !== 'completed') return true;\n  const updated = t.updated ? new Date(t.updated).getTime() : 0;\n  return updated && (NOW - updated <= DAYS_14_MS);\n}\n\nconst notionByGid = new Map();\nfor (const p of notionPages) {\n  const gid = safeText(p.property_google_task_id || '');\n  if (!gid) continue;\n  const existing = notionByGid.get(gid);\n  if (!existing) {\n    notionByGid.set(gid, p);\n  } else {\n    const a = new Date(existing.last_edited_time || existing.updatedAt || 0).getTime();\n    const b = new Date(p.last_edited_time || p.updatedAt || 0).getTime();\n    if (b >= a) notionByGid.set(gid, p);\n  }\n}\n\nconst out = [];\n\nfor (const g of googleItems) {\n  if (!inScope(g)) continue;\n\n  const gid = safeText(g.id);\n  const matched = notionByGid.get(gid);\n\n  if (!matched) {\n    out.push({ json: {\n      action: 'create_notion',\n      notionPageId: null,\n      googleTaskId: gid,\n      googleTasklistId: g.parent || TASKLIST_ID,\n      title: safeText(g.title) || '(Untitled)',\n      googleStatus: g.status || 'needsAction',\n      notionStatus: statusToNotion(g.status),\n      dueDate: normDate(g.due),\n      notes: safeText(g.notes),\n      webViewLink: g.webViewLink || '',\n    }});\n    continue;\n  }\n\n  const targetTitle = safeText(g.title) || '(Untitled)';\n  const targetStatus = statusToNotion(g.status);\n  const targetDue = normDate(g.due);\n  const targetTasklist = g.parent || TASKLIST_ID;\n  const targetUrl = g.webViewLink || '';\n\n  const currentTitle = safeText(matched.property_task_name || matched.name || '');\n  const currentStatus = safeText(matched.property_status || 'Not started');\n  const currentDue = (() => {\n    const d = matched.property_due_date;\n    if (d && d.start) return normDate(d.start);\n    if (typeof d === 'string' && d) return normDate(d);\n    return null;\n  })();\n  const currentTasklist = safeText(matched.property_google_tasklist_id || '');\n  const currentUrl = safeText(matched.property_google_task_url || '');\n\n  const changed =\n    currentTitle !== targetTitle ||\n    currentStatus !== targetStatus ||\n    currentDue !== targetDue ||\n    currentTasklist !== targetTasklist ||\n    currentUrl !== targetUrl;\n\n  if (changed) {\n    out.push({ json: {\n      action: 'update_notion',\n      notionPageId: matched.id,\n      googleTaskId: gid,\n      googleTasklistId: targetTasklist,\n      title: targetTitle,\n      googleStatus: g.status || 'needsAction',\n      notionStatus: targetStatus,\n      dueDate: targetDue,\n      webViewLink: targetUrl,\n    }});\n  } else {\n    out.push({ json: {\n      action: 'skip_no_change',\n      notionPageId: matched.id,\n      googleTaskId: gid,\n    }});\n  }\n}\n\nreturn out;"
-      }
+        -208,
+        304
+      ]
     },
     {
+      "parameters": {
+        "jsCode": "const allItems = $('Plan Google->Notion Actions').all();\nlet created = 0, updated = 0, skipped = 0;\n\nfor (const item of allItems) {\n  const a = item.json.action;\n  if (a === 'create_notion') created++;\n  else if (a === 'update_notion') updated++;\n  else skipped++;\n}\n\nreturn [{ json: {\n  branch: 'google_to_notion',\n  scanned: allItems.length,\n  created, updated, skipped,\n  timestamp: new Date().toISOString(),\n}}];"
+      },
       "id": "B-summary",
       "name": "Summary Google->Notion",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        120,
-        500
-      ],
-      "parameters": {
-        "jsCode": "const allItems = $('Plan Google->Notion Actions').all();\nlet created = 0, updated = 0, skipped = 0;\n\nfor (const item of allItems) {\n  const a = item.json.action;\n  if (a === 'create_notion') created++;\n  else if (a === 'update_notion') updated++;\n  else skipped++;\n}\n\nreturn [{ json: {\n  branch: 'google_to_notion',\n  scanned: allItems.length,\n  created, updated, skipped,\n  timestamp: new Date().toISOString(),\n}}];"
-      }
+        128,
+        512
+      ]
     },
     {
-      "id": "B-switch",
-      "name": "Route by Action",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        120,
-        300
-      ],
       "parameters": {
         "rules": {
           "values": [
             {
               "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
                 "conditions": [
                   {
                     "leftValue": "={{ $json.action }}",
@@ -134,7 +132,8 @@
                     "operator": {
                       "type": "string",
                       "operation": "equals"
-                    }
+                    },
+                    "id": "[REDACTED]"
                   }
                 ],
                 "combinator": "and"
@@ -144,6 +143,12 @@
             },
             {
               "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
                 "conditions": [
                   {
                     "leftValue": "={{ $json.action }}",
@@ -151,7 +156,8 @@
                     "operator": {
                       "type": "string",
                       "operation": "equals"
-                    }
+                    },
+                    "id": "[REDACTED]"
                   }
                 ],
                 "combinator": "and"
@@ -164,18 +170,17 @@
         "options": {
           "fallbackOutput": "extra"
         }
-      }
+      },
+      "id": "B-switch",
+      "name": "Route by Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        128,
+        304
+      ]
     },
     {
-      "id": "B-create",
-      "name": "Create Notion Page",
-      "type": "n8n-nodes-base.notion",
-      "typeVersion": 2.2,
-      "position": [
-        420,
-        180
-      ],
-      "credentials": {},
       "parameters": {
         "resource": "databasePage",
         "databaseId": {
@@ -215,18 +220,18 @@
           ]
         },
         "options": {}
-      }
-    },
-    {
-      "id": "B-update",
-      "name": "Update Notion Page",
+      },
+      "id": "B-create",
+      "name": "Create Notion Page",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        420,
-        420
+        432,
+        192
       ],
-      "credentials": {},
+      "credentials": {}
+    },
+    {
       "parameters": {
         "resource": "databasePage",
         "operation": "update",
@@ -264,7 +269,16 @@
           ]
         },
         "options": {}
-      }
+      },
+      "id": "B-update",
+      "name": "Update Notion Page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        432,
+        432
+      ],
+      "credentials": {}
     }
   ],
   "connections": {
@@ -359,28 +373,20 @@
   },
   "staticData": null,
   "meta": null,
-  "pinData": null,
+  "pinData": {},
   "versionId": "[REDACTED]",
   "activeVersionId": "[REDACTED]",
-  "versionCounter": 5,
+  "versionCounter": 21,
   "triggerCount": 1,
   "shared": [],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-03-28T19:52:14.114Z",
-    "createdAt": "2026-03-28T19:52:14.114Z",
+    "updatedAt": "2026-03-31T23:21:22.600Z",
+    "createdAt": "2026-03-31T23:21:22.600Z",
     "versionId": "[REDACTED]",
     "workflowId": "DjcCMYQxGKJxWJZt",
     "nodes": [
       {
-        "id": "B-t1",
-        "name": "Schedule Trigger",
-        "type": "n8n-nodes-base.scheduleTrigger",
-        "typeVersion": 1.2,
-        "position": [
-          -1200,
-          300
-        ],
         "parameters": {
           "rule": {
             "interval": [
@@ -390,18 +396,17 @@
               }
             ]
           }
-        }
+        },
+        "id": "B-t1",
+        "name": "Schedule Trigger",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -1200,
+          304
+        ]
       },
       {
-        "id": "B-g1",
-        "name": "Get Google Tasks",
-        "type": "n8n-nodes-base.googleTasks",
-        "typeVersion": 1,
-        "position": [
-          -960,
-          300
-        ],
-        "credentials": {},
         "parameters": {
           "operation": "getAll",
           "task": "[REDACTED]",
@@ -410,34 +415,31 @@
             "showCompleted": true,
             "showHidden": true
           }
-        }
+        },
+        "id": "B-g1",
+        "name": "Get Google Tasks",
+        "type": "n8n-nodes-base.googleTasks",
+        "typeVersion": 1,
+        "position": [
+          -960,
+          304
+        ],
+        "credentials": {}
       },
       {
+        "parameters": {
+          "jsCode": "return [{ json: { run: true } }];"
+        },
         "id": "B-gate",
         "name": "Run Once Gate",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
           -720,
-          300
-        ],
-        "parameters": {
-          "jsCode": "return [{ json: { run: true } }];"
-        }
+          304
+        ]
       },
       {
-        "id": "B-n1",
-        "name": "Get Notion Pages",
-        "type": "n8n-nodes-base.notion",
-        "typeVersion": 2.2,
-        "position": [
-          -480,
-          300
-        ],
-        "retryOnFail": true,
-        "maxTries": 3,
-        "waitBetweenTries": 10000,
-        "credentials": {},
         "parameters": {
           "resource": "databasePage",
           "operation": "getAll",
@@ -450,48 +452,58 @@
           },
           "returnAll": true,
           "options": {}
-        }
+        },
+        "id": "B-n1",
+        "name": "Get Notion Pages",
+        "type": "n8n-nodes-base.notion",
+        "typeVersion": 2.2,
+        "position": [
+          -480,
+          304
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 5000,
+        "credentials": {}
       },
       {
+        "parameters": {
+          "jsCode": "const googleItems = $('Get Google Tasks').all().map(i => i.json);\nconst notionPages = $('Get Notion Pages').all().map(i => i.json);\n\nconst NOW = Date.now();\nconst DAYS_14_MS = 14 * 24 * 60 * 60 * 1000;\nconst RECENT_THRESHOLD_MS = 12 * 60 * 1000;\nconst TASKLIST_ID = 'MDk4NTUxODgzNzA1NDM2OTIxNjg6MDow';\n\nfunction safeText(v) { return (v == null ? '' : String(v)).trim(); }\nfunction normDate(d) { return d ? String(d).slice(0, 10) : null; }\nfunction statusToNotion(gs) { return gs === 'completed' ? 'Done' : 'Not started'; }\n\nfunction inScope(t) {\n  if (t.status !== 'completed') return true;\n  const updated = t.updated ? new Date(t.updated).getTime() : 0;\n  return updated && (NOW - updated <= DAYS_14_MS);\n}\n\nconst notionByGid = new Map();\nfor (const p of notionPages) {\n  const gid = safeText(p.property_google_task_id || '');\n  if (!gid) continue;\n  const existing = notionByGid.get(gid);\n  if (!existing) {\n    notionByGid.set(gid, p);\n  } else {\n    const a = new Date(existing.last_edited_time || existing.updatedAt || 0).getTime();\n    const b = new Date(p.last_edited_time || p.updatedAt || 0).getTime();\n    if (b >= a) notionByGid.set(gid, p);\n  }\n}\n\nconst out = [];\n\nfor (const g of googleItems) {\n  if (!inScope(g)) continue;\n\n  const gid = safeText(g.id);\n  const matched = notionByGid.get(gid);\n\n  if (!matched) {\n    out.push({ json: {\n      action: 'create_notion',\n      notionPageId: null,\n      googleTaskId: gid,\n      googleTasklistId: g.parent || TASKLIST_ID,\n      title: safeText(g.title) || '(Untitled)',\n      googleStatus: g.status || 'needsAction',\n      notionStatus: statusToNotion(g.status),\n      dueDate: normDate(g.due),\n      notes: safeText(g.notes),\n      webViewLink: g.webViewLink || '',\n    }});\n    continue;\n  }\n\n  const targetTitle = safeText(g.title) || '(Untitled)';\n  const targetStatus = statusToNotion(g.status);\n  const targetDue = normDate(g.due);\n  const targetTasklist = g.parent || TASKLIST_ID;\n  const targetUrl = g.webViewLink || '';\n\n  const currentTitle = safeText(matched.property_task_name || matched.name || '');\n  const currentStatus = safeText(matched.property_status || 'Not started');\n  const currentDue = (() => {\n    const d = matched.property_due_date;\n    if (d && d.start) return normDate(d.start);\n    if (typeof d === 'string' && d) return normDate(d);\n    return null;\n  })();\n  const currentTasklist = safeText(matched.property_google_tasklist_id || '');\n  const currentUrl = safeText(matched.property_google_task_url || '');\n\n  // Conflict resolution: if Google was NOT recently updated, the status\n  // mismatch is because the user changed Notion. Don't override Notion;\n  // let GTN-A handle pushing Notion -> Google instead.\n  const googleUpdatedMs = new Date(g.updated).getTime();\n  const googleRecentlyUpdated = (NOW - googleUpdatedMs) < RECENT_THRESHOLD_MS;\n\n  let effectiveNotionStatus = targetStatus;\n  if (effectiveNotionStatus !== currentStatus && !googleRecentlyUpdated) {\n    effectiveNotionStatus = currentStatus;\n  }\n\n  const changed =\n    currentTitle !== targetTitle ||\n    currentStatus !== effectiveNotionStatus ||\n    currentDue !== targetDue ||\n    currentTasklist !== targetTasklist ||\n    currentUrl !== targetUrl;\n\n  if (changed) {\n    out.push({ json: {\n      action: 'update_notion',\n      notionPageId: matched.id,\n      googleTaskId: gid,\n      googleTasklistId: targetTasklist,\n      title: targetTitle,\n      googleStatus: g.status || 'needsAction',\n      notionStatus: effectiveNotionStatus,\n      dueDate: targetDue,\n      webViewLink: targetUrl,\n    }});\n  } else {\n    out.push({ json: {\n      action: 'skip_no_change',\n      notionPageId: matched.id,\n      googleTaskId: gid,\n    }});\n  }\n}\n\nreturn out;"
+        },
         "id": "B-plan",
         "name": "Plan Google->Notion Actions",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          -200,
-          300
-        ],
-        "parameters": {
-          "jsCode": "const googleItems = $('Get Google Tasks').all().map(i => i.json);\nconst notionPages = $('Get Notion Pages').all().map(i => i.json);\n\nconst NOW = Date.now();\nconst DAYS_14_MS = 14 * 24 * 60 * 60 * 1000;\nconst TASKLIST_ID = 'MDk4NTUxODgzNzA1NDM2OTIxNjg6MDow';\n\nfunction safeText(v) { return (v == null ? '' : String(v)).trim(); }\nfunction normDate(d) { return d ? String(d).slice(0, 10) : null; }\nfunction statusToNotion(gs) { return gs === 'completed' ? 'Done' : 'Not started'; }\n\nfunction inScope(t) {\n  if (t.status !== 'completed') return true;\n  const updated = t.updated ? new Date(t.updated).getTime() : 0;\n  return updated && (NOW - updated <= DAYS_14_MS);\n}\n\nconst notionByGid = new Map();\nfor (const p of notionPages) {\n  const gid = safeText(p.property_google_task_id || '');\n  if (!gid) continue;\n  const existing = notionByGid.get(gid);\n  if (!existing) {\n    notionByGid.set(gid, p);\n  } else {\n    const a = new Date(existing.last_edited_time || existing.updatedAt || 0).getTime();\n    const b = new Date(p.last_edited_time || p.updatedAt || 0).getTime();\n    if (b >= a) notionByGid.set(gid, p);\n  }\n}\n\nconst out = [];\n\nfor (const g of googleItems) {\n  if (!inScope(g)) continue;\n\n  const gid = safeText(g.id);\n  const matched = notionByGid.get(gid);\n\n  if (!matched) {\n    out.push({ json: {\n      action: 'create_notion',\n      notionPageId: null,\n      googleTaskId: gid,\n      googleTasklistId: g.parent || TASKLIST_ID,\n      title: safeText(g.title) || '(Untitled)',\n      googleStatus: g.status || 'needsAction',\n      notionStatus: statusToNotion(g.status),\n      dueDate: normDate(g.due),\n      notes: safeText(g.notes),\n      webViewLink: g.webViewLink || '',\n    }});\n    continue;\n  }\n\n  const targetTitle = safeText(g.title) || '(Untitled)';\n  const targetStatus = statusToNotion(g.status);\n  const targetDue = normDate(g.due);\n  const targetTasklist = g.parent || TASKLIST_ID;\n  const targetUrl = g.webViewLink || '';\n\n  const currentTitle = safeText(matched.property_task_name || matched.name || '');\n  const currentStatus = safeText(matched.property_status || 'Not started');\n  const currentDue = (() => {\n    const d = matched.property_due_date;\n    if (d && d.start) return normDate(d.start);\n    if (typeof d === 'string' && d) return normDate(d);\n    return null;\n  })();\n  const currentTasklist = safeText(matched.property_google_tasklist_id || '');\n  const currentUrl = safeText(matched.property_google_task_url || '');\n\n  const changed =\n    currentTitle !== targetTitle ||\n    currentStatus !== targetStatus ||\n    currentDue !== targetDue ||\n    currentTasklist !== targetTasklist ||\n    currentUrl !== targetUrl;\n\n  if (changed) {\n    out.push({ json: {\n      action: 'update_notion',\n      notionPageId: matched.id,\n      googleTaskId: gid,\n      googleTasklistId: targetTasklist,\n      title: targetTitle,\n      googleStatus: g.status || 'needsAction',\n      notionStatus: targetStatus,\n      dueDate: targetDue,\n      webViewLink: targetUrl,\n    }});\n  } else {\n    out.push({ json: {\n      action: 'skip_no_change',\n      notionPageId: matched.id,\n      googleTaskId: gid,\n    }});\n  }\n}\n\nreturn out;"
-        }
+          -208,
+          304
+        ]
       },
       {
+        "parameters": {
+          "jsCode": "const allItems = $('Plan Google->Notion Actions').all();\nlet created = 0, updated = 0, skipped = 0;\n\nfor (const item of allItems) {\n  const a = item.json.action;\n  if (a === 'create_notion') created++;\n  else if (a === 'update_notion') updated++;\n  else skipped++;\n}\n\nreturn [{ json: {\n  branch: 'google_to_notion',\n  scanned: allItems.length,\n  created, updated, skipped,\n  timestamp: new Date().toISOString(),\n}}];"
+        },
         "id": "B-summary",
         "name": "Summary Google->Notion",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          120,
-          500
-        ],
-        "parameters": {
-          "jsCode": "const allItems = $('Plan Google->Notion Actions').all();\nlet created = 0, updated = 0, skipped = 0;\n\nfor (const item of allItems) {\n  const a = item.json.action;\n  if (a === 'create_notion') created++;\n  else if (a === 'update_notion') updated++;\n  else skipped++;\n}\n\nreturn [{ json: {\n  branch: 'google_to_notion',\n  scanned: allItems.length,\n  created, updated, skipped,\n  timestamp: new Date().toISOString(),\n}}];"
-        }
+          128,
+          512
+        ]
       },
       {
-        "id": "B-switch",
-        "name": "Route by Action",
-        "type": "n8n-nodes-base.switch",
-        "typeVersion": 3.2,
-        "position": [
-          120,
-          300
-        ],
         "parameters": {
           "rules": {
             "values": [
               {
                 "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
                   "conditions": [
                     {
                       "leftValue": "={{ $json.action }}",
@@ -499,7 +511,8 @@
                       "operator": {
                         "type": "string",
                         "operation": "equals"
-                      }
+                      },
+                      "id": "[REDACTED]"
                     }
                   ],
                   "combinator": "and"
@@ -509,6 +522,12 @@
               },
               {
                 "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
                   "conditions": [
                     {
                       "leftValue": "={{ $json.action }}",
@@ -516,7 +535,8 @@
                       "operator": {
                         "type": "string",
                         "operation": "equals"
-                      }
+                      },
+                      "id": "[REDACTED]"
                     }
                   ],
                   "combinator": "and"
@@ -529,18 +549,17 @@
           "options": {
             "fallbackOutput": "extra"
           }
-        }
+        },
+        "id": "B-switch",
+        "name": "Route by Action",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          128,
+          304
+        ]
       },
       {
-        "id": "B-create",
-        "name": "Create Notion Page",
-        "type": "n8n-nodes-base.notion",
-        "typeVersion": 2.2,
-        "position": [
-          420,
-          180
-        ],
-        "credentials": {},
         "parameters": {
           "resource": "databasePage",
           "databaseId": {
@@ -580,18 +599,18 @@
             ]
           },
           "options": {}
-        }
-      },
-      {
-        "id": "B-update",
-        "name": "Update Notion Page",
+        },
+        "id": "B-create",
+        "name": "Create Notion Page",
         "type": "n8n-nodes-base.notion",
         "typeVersion": 2.2,
         "position": [
-          420,
-          420
+          432,
+          192
         ],
-        "credentials": {},
+        "credentials": {}
+      },
+      {
         "parameters": {
           "resource": "databasePage",
           "operation": "update",
@@ -629,7 +648,16 @@
             ]
           },
           "options": {}
-        }
+        },
+        "id": "B-update",
+        "name": "Update Notion Page",
+        "type": "n8n-nodes-base.notion",
+        "typeVersion": 2.2,
+        "position": [
+          432,
+          432
+        ],
+        "credentials": {}
       }
     ],
     "connections": {
@@ -719,11 +747,19 @@
     "autosaved": false,
     "workflowPublishHistory": [
       {
-        "createdAt": "2026-03-28T19:52:41.843Z",
-        "id": 118,
+        "createdAt": "2026-03-31T23:21:22.645Z",
+        "id": 133,
         "workflowId": "DjcCMYQxGKJxWJZt",
         "versionId": "[REDACTED]",
         "event": "activated",
+        "userId": "[REDACTED]"
+      },
+      {
+        "createdAt": "2026-03-31T23:21:22.622Z",
+        "id": 132,
+        "workflowId": "DjcCMYQxGKJxWJZt",
+        "versionId": "[REDACTED]",
+        "event": "deactivated",
         "userId": "[REDACTED]"
       }
     ]
