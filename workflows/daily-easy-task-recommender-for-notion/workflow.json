@@ -1006,13 +1006,13 @@
   "pinData": {},
   "versionId": "[REDACTED]",
   "activeVersionId": "[REDACTED]",
-  "versionCounter": 131,
+  "versionCounter": 135,
   "triggerCount": 1,
   "shared": [],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-03-24T09:16:24.000Z",
-    "createdAt": "2026-03-23T14:51:50.063Z",
+    "updatedAt": "2026-04-03T05:55:43.000Z",
+    "createdAt": "2026-03-24T15:08:51.339Z",
     "versionId": "[REDACTED]",
     "workflowId": "Ww7xc3FuKKR8hYj1",
     "nodes": [
@@ -1617,8 +1617,8 @@
         "type": "n8n-nodes-base.stickyNote",
         "typeVersion": 1,
         "position": [
-          32,
-          -32
+          -16,
+          -112
         ]
       }
     ],
@@ -2003,13 +2003,13 @@
       }
     },
     "authors": "Daniel Salib",
-    "name": "Version 1869ed17",
+    "name": "Version 5f708d9e",
     "description": "",
-    "autosaved": false,
+    "autosaved": true,
     "workflowPublishHistory": [
       {
-        "createdAt": "2026-03-24T09:16:24.232Z",
-        "id": 110,
+        "createdAt": "2026-04-03T05:55:43.880Z",
+        "id": 135,
         "workflowId": "Ww7xc3FuKKR8hYj1",
         "versionId": "[REDACTED]",
         "event": "activated",

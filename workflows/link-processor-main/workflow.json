@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-04-01T10:00:13.871Z",
+  "updatedAt": "2026-04-01T13:34:54.198Z",
   "createdAt": "2026-04-01T08:51:20.388Z",
   "id": "rTrIiHgwAWw6tKaN",
   "name": "Link Processor — Main",
@@ -25,7 +25,8 @@
       "position": [
         -320,
         320
-      ]
+      ],
+      "disabled": true
     },
     {
       "parameters": {
@@ -100,6 +101,9 @@
         1008,
         304
       ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
       "credentials": {}
     },
     {
@@ -151,18 +155,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://whisper.srv1312716.hstgr.cloud/api/v1/transcribe",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "http://whisper:8000/transcribe/async",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": []
-        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $json.url }}\",\n  \"language\": \"en\"\n}",
         "options": {
           "timeout": 30000
-        },
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"url\": \"{{ $json.url }}\",\n  \"language\": \"en\"\n}"
+        }
       },
       "id": "[REDACTED]",
       "name": "HTTP — Whisper Submit Job",
@@ -172,11 +171,14 @@
         1808,
         208
       ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first().json;\nconst jobId = item.jobId;\nconst estimatedWait = item.estimatedWait || 600;\nconst maxPolls = Math.ceil(Math.max(estimatedWait * 2, 7200) / 30);\n\nif (!jobId) {\n  return [{\n    json: {\n      ...item,\n      _pollResult: 'failed',\n      error: item.message || item.error || 'Whisper submit failed - no jobId returned'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...item,\n    _poll: {\n      jobId,\n      attempt: 0,\n      maxPolls,\n      estimatedWait\n    }\n  }\n}];"
+        "jsCode": "const item = $input.first().json;\nconst jobId = item.job_id;\nconst estimatedWait = item.estimated_seconds || 600;\nconst maxPolls = Math.ceil(Math.max(estimatedWait * 2, 7200) / 30);\n\nif (!jobId) {\n  return [{\n    json: {\n      ...item,\n      _pollResult: 'failed',\n      error: item.message || item.error || 'Whisper submit failed - no job_id returned'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...item,\n    _poll: {\n      jobId,\n      attempt: 0,\n      maxPolls,\n      estimatedWait\n    }\n  }\n}];"
       },
       "id": "[REDACTED]",
       "name": "Code — Init Poll State",
@@ -203,9 +205,7 @@
     },
     {
       "parameters": {
-        "url": "=https://whisper.srv1312716.hstgr.cloud/api/v1/jobs/{{ $json._poll.jobId }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "=http://whisper:8000/transcribe/status/{{ $json._poll.jobId }}",
         "options": {
           "timeout": 10000
         }
@@ -218,11 +218,14 @@
         2560,
         208
       ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "const pollResponse = $input.first().json;\nconst poll = pollResponse._poll;\nconst status = pollResponse.status;\nconst attempt = (poll?.attempt || 0) + 1;\n\nif (status === 'completed') {\n  return [{\n    json: {\n      ...pollResponse,\n      _pollResult: 'completed',\n      transcript: pollResponse.result?.text || '',\n      language: pollResponse.result?.language || 'en'\n    }\n  }];\n}\n\nif (status === 'failed') {\n  return [{\n    json: {\n      ...pollResponse,\n      _pollResult: 'failed',\n      error: pollResponse.failedReason || 'Whisper job failed'\n    }\n  }];\n}\n\nif (attempt >= (poll?.maxPolls || 240)) {\n  return [{\n    json: {\n      ...pollResponse,\n      _pollResult: 'timeout',\n      error: `Whisper polling timed out after ${attempt} attempts`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...pollResponse,\n    _poll: {\n      ...poll,\n      attempt\n    },\n    _pollResult: 'pending'\n  }\n}];"
+        "jsCode": "const pollResponse = $input.first().json;\nconst poll = pollResponse._poll;\nconst status = pollResponse.status;\nconst attempt = (poll?.attempt || 0) + 1;\n\nif (status === 'done') {\n  return [{\n    json: {\n      ...pollResponse,\n      _pollResult: 'completed',\n      transcript: pollResponse.result?.text || '',\n      language: pollResponse.result?.language || 'en'\n    }\n  }];\n}\n\nif (status === 'error' || status === 'failed') {\n  return [{\n    json: {\n      ...pollResponse,\n      _pollResult: 'failed',\n      error: pollResponse.error || pollResponse.failedReason || 'Whisper job failed'\n    }\n  }];\n}\n\nif (attempt >= (poll?.maxPolls || 240)) {\n  return [{\n    json: {\n      ...pollResponse,\n      _pollResult: 'timeout',\n      error: `Whisper polling timed out after ${attempt} attempts`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...pollResponse,\n    _poll: {\n      ...poll,\n      attempt\n    },\n    _pollResult: 'pending'\n  }\n}];"
       },
       "id": "[REDACTED]",
       "name": "Code — Evaluate Poll Result",
@@ -304,14 +307,11 @@
         "method": "POST",
         "url": "http://ollama:11434/api/generate",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": []
-        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen2.5:1.5b\",\n  \"prompt\": \"You are a summarisation assistant. Summarise the following content in approximately 750 words, structured as 3 clearly labelled sections. Use bullet points within each section. Focus on key points, arguments, and takeaways.\\n\\n---\\n\\n\" + $json.transcript + \"\\n\\n---\\n\\nSummary:\",\n  \"stream\": false,\n  \"options\": {\n    \"num_ctx\": 32768\n  }\n}",
         "options": {
           "timeout": 120000
-        },
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"qwen2.5:1.5b\",\n  \"prompt\": \"You are a summarisation assistant. Summarise the following content in approximately 750 words, structured as 3 clearly labelled sections. Use bullet points within each section. Focus on key points, arguments, and takeaways.\\n\\n---\\n\\n\" + $json.transcript + \"\\n\\n---\\n\\nSummary:\",\n  \"stream\": false,\n  \"options\": {\n    \"num_ctx\": 32768\n  }\n}"
+        }
       },
       "id": "[REDACTED]",
       "name": "HTTP — Ollama Summarise (YouTube)",
@@ -321,6 +321,9 @@
         3360,
         208
       ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 10000,
       "onError": "continueRegularOutput"
     },
     {
@@ -339,42 +342,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.firecrawl.dev/v1/scrape",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": []
-        },
-        "options": {
-          "timeout": 120000
-        },
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"url\": \"{{ $json.url }}\",\n  \"formats\": [\"markdown\"]\n}"
-      },
-      "id": "[REDACTED]",
-      "name": "HTTP — Firecrawl Scrape",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        1808,
-        512
-      ],
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "method": "POST",
         "url": "http://ollama:11434/api/generate",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": []
-        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen2.5:1.5b\",\n  \"prompt\": \"You are a summarisation assistant. Summarise the following content in approximately 750 words, structured as 3 clearly labelled sections. Use bullet points within each section. Focus on key points, arguments, and takeaways.\\n\\n---\\n\\n\" + $json.data.markdown + \"\\n\\n---\\n\\nSummary:\",\n  \"stream\": false,\n  \"options\": {\n    \"num_ctx\": 32768\n  }\n}",
         "options": {
           "timeout": 120000
-        },
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"qwen2.5:1.5b\",\n  \"prompt\": \"You are a summarisation assistant. Summarise the following content in approximately 750 words, structured as 3 clearly labelled sections. Use bullet points within each section. Focus on key points, arguments, and takeaways.\\n\\n---\\n\\n\" + $json.data.markdown + \"\\n\\n---\\n\\nSummary:\",\n  \"stream\": false,\n  \"options\": {\n    \"num_ctx\": 32768\n  }\n}"
+        }
       },
       "id": "[REDACTED]",
       "name": "HTTP — Ollama Summarise (Article)",
@@ -384,6 +358,9 @@
         2064,
         512
       ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 10000,
       "onError": "continueRegularOutput"
     },
     {
@@ -405,10 +382,6 @@
         "url": "=https://api.notion.com/v1/pages/{{ $json.id }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "[REDACTED]",
-        "sendHeaders": false,
-        "headerParameters": {
-          "parameters": []
-        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"properties\": {\n    \"Processing State\": { \"select\": { \"name\": \"Done\" } },\n    \"Processed\": { \"checkbox\": true },\n    \"Processed At\": { \"date\": { \"start\": \"{{ $now.toISO() }}\" } },\n    \"Content Type\": { \"select\": { \"name\": \"{{ $json.contentType }}\" } },\n    \"AI Summary\": {\n      \"rich_text\": {{ JSON.stringify($json.summarySegments.map(s => ({ type: 'text', text: { content: s } }))) }}\n    },\n    \"Last Error\": {\n      \"rich_text\": [{ \"type\": \"text\", \"text\": { \"content\": \"\" } }]\n    }\n  }\n}",
@@ -424,6 +397,9 @@
         3904,
         352
       ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
       "onError": "continueRegularOutput"
     },
     {
@@ -441,34 +417,7 @@
     },
     {
       "parameters": {
-        "method": "PATCH",
-        "url": "=https://api.notion.com/v1/pages/{{ $json.id }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "[REDACTED]",
-        "sendHeaders": false,
-        "headerParameters": {
-          "parameters": []
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"properties\": {\n    \"Processing State\": { \"select\": { \"name\": \"Error\" } },\n    \"Last Error\": {\n      \"rich_text\": [{ \"type\": \"text\", \"text\": { \"content\": \"{{ ($json.error || 'Unknown error').substring(0, 2000) }}\" } }]\n    }\n  }\n}",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "id": "[REDACTED]",
-      "name": "HTTP — Notion Write Error",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        3904,
-        704
-      ],
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\n\nconst filtered = items.filter(item => {\n  const state = item.json.properties?.['Processing State']?.select?.name || '';\n  return state === '' || state === 'Queued';\n});\n\nif (filtered.length === 0) {\n  return [];\n}\n\nreturn filtered.map(item => ({ json: item.json }));"
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nreturn items.map(item => ({ json: item.json }));"
       },
       "id": "[REDACTED]",
       "name": "Code — Extract Notion Pages",
@@ -480,14 +429,6 @@
       ]
     },
     {
-      "id": "query",
-      "name": "Notion — Query Unprocessed",
-      "type": "n8n-nodes-base.notion",
-      "typeVersion": 2.2,
-      "position": [
-        -64,
-        320
-      ],
       "parameters": {
         "resource": "databasePage",
         "operation": "getAll",
@@ -497,22 +438,78 @@
           "value": "[REDACTED]"
         },
         "returnAll": true,
+        "simple": false,
         "filterType": "manual",
         "filters": {
           "conditions": [
             {
               "key": "[REDACTED]",
               "condition": "equals",
-              "returnType": "boolean",
-              "value": false
+              "returnType": "boolean"
             }
           ]
         },
         "options": {
           "downloadFiles": false
-        },
-        "simple": false
+        }
       },
+      "id": "query",
+      "name": "Notion — Query Unprocessed",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -64,
+        320
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "[REDACTED]"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "[REDACTED]",
+              "selectValue": "Error"
+            },
+            {
+              "key": "[REDACTED]",
+              "textContent": "={{ ($json.error || 'Unknown error').substring(0, 2000) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "[REDACTED]",
+      "name": "Notion — Write Error",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        3904,
+        704
+      ],
+      "credentials": {},
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "scrape",
+        "requestOptions": {}
+      },
+      "type": "@mendable/n8n-nodes-firecrawl.firecrawl",
+      "typeVersion": 1,
+      "position": [
+        1824,
+        576
+      ],
+      "id": "[REDACTED]",
+      "name": "/scrape",
       "credentials": {}
     }
   ],
@@ -561,7 +558,7 @@
         ],
         [
           {
-            "node": "HTTP — Firecrawl Scrape",
+            "node": "/scrape",
             "type": "main",
             "index": 0
           }
@@ -652,7 +649,7 @@
         ],
         [
           {
-            "node": "HTTP — Notion Write Error",
+            "node": "Notion — Write Error",
             "type": "main",
             "index": 0
           }
@@ -676,17 +673,6 @@
         [
           {
             "node": "Code — Prepare YouTube Writes",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP — Firecrawl Scrape": {
-      "main": [
-        [
-          {
-            "node": "HTTP — Ollama Summarise (Article)",
             "type": "main",
             "index": 0
           }
@@ -748,17 +734,6 @@
         ]
       ]
     },
-    "HTTP — Notion Write Error": {
-      "main": [
-        [
-          {
-            "node": "Loop — Process Each Row",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Code — Extract Notion Pages": {
       "main": [
         [
@@ -791,6 +766,28 @@
           }
         ]
       ]
+    },
+    "Notion — Write Error": {
+      "main": [
+        [
+          {
+            "node": "Loop — Process Each Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "/scrape": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Ollama Summarise (Article)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -800,11 +797,13 @@
     "availableInMCP": false
   },
   "staticData": null,
-  "meta": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
   "pinData": {},
   "versionId": "[REDACTED]",
   "activeVersionId": null,
-  "versionCounter": 29,
+  "versionCounter": 48,
   "triggerCount": 0,
   "shared": [],
   "tags": [],
