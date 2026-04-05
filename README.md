@@ -1,6 +1,6 @@
 # n8n Workflow Backup
 
-> 13 workflows (6 active, 7 inactive) — automated weekly backup via n8n
+> 13 workflows (5 active, 6 inactive, 2 archived) — automated weekly backup via n8n
 
 This repository is an automated backup of all n8n workflows running on a Hostinger VPS. Backups are committed every Friday at 6 PM (Europe/Dublin) by the [Weekly Workflow Backup to GitHub](#infrastructure) workflow. Each workflow lives in its own folder as `workflow.json`.
 
@@ -37,7 +37,7 @@ Scheduled scrapers that track listings, detect changes, and send alerts.
 
 | Status | Workflow | Folder | Nodes | Description |
 |--------|----------|--------|-------|-------------|
-| **Active** | Property Hunter | [`property-hunter`](workflows/property-hunter) | 17 | Scrapes real estate sites via Firecrawl, extracts structured listings via Ollama AI Agent, deduplicates against Supabase, sends Gmail alerts for new properties |
+| Archived | Property Hunter | [`property-hunter`](workflows/property-hunter) | 17 | Scrapes real estate sites via Firecrawl, extracts structured listings via Ollama AI Agent, deduplicates against Supabase, sends Gmail alerts for new properties |
 
 ---
 
