@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-04-01T09:57:10.708Z",
+  "updatedAt": "2026-04-05T15:16:11.832Z",
   "createdAt": "2026-04-01T08:51:22.474Z",
   "id": "1BliWOKw6Ka5lWtK",
   "name": "Link Processor — Retry",
@@ -8,14 +8,6 @@
   "isArchived": false,
   "nodes": [
     {
-      "id": "trigger-retry",
-      "name": "Trigger — Schedule",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.3,
-      "position": [
-        0,
-        300
-      ],
       "parameters": {
         "rule": {
           "interval": [
@@ -25,17 +17,54 @@
             }
           ]
         }
-      }
+      },
+      "id": "trigger-retry",
+      "name": "Trigger — Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        304
+      ]
     },
     {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "[REDACTED]"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "[REDACTED]",
+              "condition": "equals",
+              "returnType": "string"
+            },
+            {
+              "key": "[REDACTED]",
+              "condition": "equals",
+              "returnType": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
       "id": "[REDACTED]",
       "name": "Notion — Query Error Rows",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        250,
-        200
+        256,
+        208
       ],
+      "credentials": {}
+    },
+    {
       "parameters": {
         "resource": "databasePage",
         "operation": "getAll",
@@ -46,118 +75,72 @@
         },
         "returnAll": true,
         "filterType": "manual",
-        "filterJson": "",
         "filters": {
           "conditions": [
             {
               "key": "[REDACTED]",
               "condition": "equals",
-              "returnType": "string",
-              "value": "Error"
+              "returnType": "string"
             },
             {
               "key": "[REDACTED]",
               "condition": "equals",
-              "returnType": "boolean",
-              "value": false
+              "returnType": "boolean"
             }
           ]
-        }
+        },
+        "options": {}
       },
-      "credentials": {}
-    },
-    {
       "id": "[REDACTED]",
       "name": "Notion — Query Stale Processing",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        250,
-        450
+        256,
+        464
       ],
-      "parameters": {
-        "resource": "databasePage",
-        "operation": "getAll",
-        "databaseId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "[REDACTED]"
-        },
-        "returnAll": true,
-        "filterType": "manual",
-        "filterJson": "",
-        "filters": {
-          "conditions": [
-            {
-              "key": "[REDACTED]",
-              "condition": "equals",
-              "returnType": "string",
-              "value": "[REDACTED]"
-            },
-            {
-              "key": "[REDACTED]",
-              "condition": "equals",
-              "returnType": "boolean",
-              "value": false
-            }
-          ]
-        }
-      },
       "credentials": {}
     },
     {
+      "parameters": {
+        "jsCode": "const errorRows = $('Notion \\u2014 Query Error Rows').all();\nconst staleRows = $('Notion \\u2014 Query Stale Processing').all();\n\nconst now = Date.now();\nconst THREE_HOURS = 3 * 60 * 60 * 1000;\n\nconst retryableErrors = errorRows.filter(row => {\n  const lastError = row.json.properties?.['Last Error']?.rich_text?.[0]?.plain_text || '';\n  const attemptMatch = lastError.match(/^\\[Attempt (\\d+)\\]/);\n  const attempt = attemptMatch ? parseInt(attemptMatch[1]) : 0;\n  return attempt < 3;\n});\n\nconst staleResets = staleRows.filter(row => {\n  const lastEdited = new Date(row.json.last_edited_time).getTime();\n  return (now - lastEdited) > THREE_HOURS;\n});\n\nconst allResets = [...retryableErrors, ...staleResets];\n\nif (allResets.length === 0) {\n  return [];\n}\n\nreturn allResets.map(row => ({ json: row.json }));"
+      },
       "id": "[REDACTED]",
       "name": "Code — Filter and Prepare Resets",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        550,
-        300
-      ],
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const errorRows = $('Notion \\u2014 Query Error Rows').all();\nconst staleRows = $('Notion \\u2014 Query Stale Processing').all();\n\nconst now = Date.now();\nconst THREE_HOURS = 3 * 60 * 60 * 1000;\n\nconst retryableErrors = errorRows.filter(row => {\n  const lastError = row.json.properties?.['Last Error']?.rich_text?.[0]?.plain_text || '';\n  const attemptMatch = lastError.match(/^\\[Attempt (\\d+)\\]/);\n  const attempt = attemptMatch ? parseInt(attemptMatch[1]) : 0;\n  return attempt < 3;\n});\n\nconst staleResets = staleRows.filter(row => {\n  const lastEdited = new Date(row.json.last_edited_time).getTime();\n  return (now - lastEdited) > THREE_HOURS;\n});\n\nconst allResets = [...retryableErrors, ...staleResets];\n\nif (allResets.length === 0) {\n  return [];\n}\n\nreturn allResets.map(row => ({ json: row.json }));"
-      }
+        560,
+        304
+      ]
     },
     {
+      "parameters": {
+        "options": {}
+      },
       "id": "[REDACTED]",
       "name": "Loop — Reset Each Row",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
         800,
-        300
-      ],
-      "parameters": {
-        "batchSize": 1,
-        "options": {}
-      }
+        304
+      ]
     },
     {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst lastError = item.properties?.['Last Error']?.rich_text?.[0]?.plain_text || '';\nconst attemptMatch = lastError.match(/^\\[Attempt (\\d+)\\]/);\nconst currentAttempt = attemptMatch ? parseInt(attemptMatch[1]) : 0;\nconst nextAttempt = currentAttempt + 1;\n\nconst cleanError = lastError.replace(/^\\[Attempt \\d+\\]\\s*/, '');\nconst newError = `[Attempt ${nextAttempt}] ${cleanError}`;\n\nreturn [{\n  json: {\n    pageId: item.id,\n    newError: newError.substring(0, 2000)\n  }\n}];"
+      },
       "id": "[REDACTED]",
       "name": "Code — Prepare Reset Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1050,
-        300
-      ],
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const item = $input.first().json;\nconst lastError = item.properties?.['Last Error']?.rich_text?.[0]?.plain_text || '';\nconst attemptMatch = lastError.match(/^\\[Attempt (\\d+)\\]/);\nconst currentAttempt = attemptMatch ? parseInt(attemptMatch[1]) : 0;\nconst nextAttempt = currentAttempt + 1;\n\nconst cleanError = lastError.replace(/^\\[Attempt \\d+\\]\\s*/, '');\nconst newError = `[Attempt ${nextAttempt}] ${cleanError}`;\n\nreturn [{\n  json: {\n    pageId: item.id,\n    newError: newError.substring(0, 2000)\n  }\n}];"
-      }
+        1056,
+        304
+      ]
     },
     {
-      "id": "[REDACTED]",
-      "name": "Notion — Reset to Queued",
-      "type": "n8n-nodes-base.notion",
-      "typeVersion": 2.2,
-      "position": [
-        1300,
-        300
-      ],
       "parameters": {
         "resource": "databasePage",
         "operation": "update",
@@ -173,8 +156,17 @@
               "selectValue": "Queued"
             }
           ]
-        }
+        },
+        "options": {}
       },
+      "id": "[REDACTED]",
+      "name": "Notion — Reset to Queued",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1312,
+        304
+      ],
       "credentials": {}
     }
   ],
@@ -271,10 +263,10 @@
   },
   "staticData": null,
   "meta": null,
-  "pinData": null,
+  "pinData": {},
   "versionId": "[REDACTED]",
   "activeVersionId": null,
-  "versionCounter": 5,
+  "versionCounter": 6,
   "triggerCount": 0,
   "shared": [],
   "tags": [],
