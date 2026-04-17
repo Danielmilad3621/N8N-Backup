@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-04-14T13:51:23.824Z",
+  "generatedAt": "2026-04-17T17:00:41.160Z",
   "source": "n8n automated weekly backup",
-  "workflowCount": 11,
+  "workflowCount": 13,
   "workflows": [
     {
       "workflowId": "1BliWOKw6Ka5lWtK",
@@ -23,6 +23,13 @@
       "active": false,
       "folder": "workflows/whisper-transcription-form",
       "file": "workflows/whisper-transcription-form/workflow.json"
+    },
+    {
+      "workflowId": "AMpIYZvqZ1tNwn0U",
+      "workflowName": "Peak Plan Daily Reminders",
+      "active": false,
+      "folder": "workflows/peak-plan-daily-reminders",
+      "file": "workflows/peak-plan-daily-reminders/workflow.json"
     },
     {
       "workflowId": "DjcCMYQxGKJxWJZt",
@@ -58,6 +65,13 @@
       "active": true,
       "folder": "workflows/weekly-workflow-backup-to-github",
       "file": "workflows/weekly-workflow-backup-to-github/workflow.json"
+    },
+    {
+      "workflowId": "oj6RP98Ca6SKZ5yA",
+      "workflowName": "WHOOP Data Proxy",
+      "active": true,
+      "folder": "workflows/whoop-data-proxy",
+      "file": "workflows/whoop-data-proxy/workflow.json"
     },
     {
       "workflowId": "rTrIiHgwAWw6tKaN",

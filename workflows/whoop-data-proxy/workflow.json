@@ -1,0 +1,469 @@
+{
+  "updatedAt": "2026-04-15T09:35:45.228Z",
+  "createdAt": "2026-04-14T22:18:55.317Z",
+  "id": "oj6RP98Ca6SKZ5yA",
+  "name": "WHOOP Data Proxy",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "path": "whoop-data",
+        "httpMethod": "GET",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "[REDACTED]"
+    },
+    {
+      "id": "trigger-sync",
+      "name": "Trigger Sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "url": "http://72.62.238.215:8000/api/v1/providers/whoop/users/0155fb5f-2bb0-4f9c-b4e2-16b43b123a8e/sync",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Open-Wearables-API-Key",
+              "value": "[REDACTED]"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "wait-sync",
+      "name": "Wait 3s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "amount": 3,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "get-sleep",
+      "name": "Get Sleep",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "url": "=http://72.62.238.215:8000/api/v1/users/0155fb5f-2bb0-4f9c-b4e2-16b43b123a8e/summaries/sleep?start_date={{ new Date(Date.now() - 172800000).toISOString().split('T')[0] }}&end_date={{ new Date().toISOString().split('T')[0] }}&limit=1",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Open-Wearables-API-Key",
+              "value": "[REDACTED]"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "get-body",
+      "name": "Get Body",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        300
+      ],
+      "parameters": {
+        "url": "http://72.62.238.215:8000/api/v1/users/0155fb5f-2bb0-4f9c-b4e2-16b43b123a8e/summaries/body",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Open-Wearables-API-Key",
+              "value": "[REDACTED]"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const bodyData = $json;\nconst sleepNode = $node['Get Sleep'].json;\nconst latestSleep = (sleepNode.data || [])[0] || {};\nconst stages = latestSleep.stages || {};\n\nreturn [{\n  json: {\n    rhr: bodyData.averaged?.resting_heart_rate_bpm || null,\n    hrv: bodyData.averaged?.avg_hrv_sdnn_ms || null,\n    recovery_score: null,\n    deep_sleep_minutes: stages.deep_minutes || null,\n    sleep_debt_minutes: null,\n    sleep_duration_minutes: latestSleep.duration_minutes || null,\n    sleep_efficiency: latestSleep.efficiency_percent || null,\n    rem_minutes: stages.rem_minutes || null,\n    light_minutes: stages.light_minutes || null,\n    sleep_date: latestSleep.date || null,\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1580,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Trigger Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Sync": {
+      "main": [
+        [
+          {
+            "node": "Wait 3s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3s": {
+      "main": [
+        [
+          {
+            "node": "Get Sleep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Sleep": {
+      "main": [
+        [
+          {
+            "node": "Get Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Body": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "[REDACTED]",
+  "activeVersionId": "[REDACTED]",
+  "versionCounter": 17,
+  "triggerCount": 1,
+  "shared": [],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-04-15T09:35:45.229Z",
+    "createdAt": "2026-04-15T09:35:45.229Z",
+    "versionId": "[REDACTED]",
+    "workflowId": "oj6RP98Ca6SKZ5yA",
+    "nodes": [
+      {
+        "id": "webhook",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          250,
+          300
+        ],
+        "parameters": {
+          "path": "whoop-data",
+          "httpMethod": "GET",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "webhookId": "[REDACTED]"
+      },
+      {
+        "id": "trigger-sync",
+        "name": "Trigger Sync",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          480,
+          300
+        ],
+        "parameters": {
+          "url": "http://72.62.238.215:8000/api/v1/providers/whoop/users/0155fb5f-2bb0-4f9c-b4e2-16b43b123a8e/sync",
+          "method": "POST",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Open-Wearables-API-Key",
+                "value": "[REDACTED]"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 5000
+          }
+        },
+        "continueOnFail": true
+      },
+      {
+        "id": "wait-sync",
+        "name": "Wait 3s",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          700,
+          300
+        ],
+        "parameters": {
+          "amount": 3,
+          "unit": "seconds"
+        }
+      },
+      {
+        "id": "get-sleep",
+        "name": "Get Sleep",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          920,
+          300
+        ],
+        "parameters": {
+          "url": "=http://72.62.238.215:8000/api/v1/users/0155fb5f-2bb0-4f9c-b4e2-16b43b123a8e/summaries/sleep?start_date={{ new Date(Date.now() - 172800000).toISOString().split('T')[0] }}&end_date={{ new Date().toISOString().split('T')[0] }}&limit=1",
+          "method": "GET",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Open-Wearables-API-Key",
+                "value": "[REDACTED]"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 10000
+          }
+        },
+        "continueOnFail": true
+      },
+      {
+        "id": "get-body",
+        "name": "Get Body",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1140,
+          300
+        ],
+        "parameters": {
+          "url": "http://72.62.238.215:8000/api/v1/users/0155fb5f-2bb0-4f9c-b4e2-16b43b123a8e/summaries/body",
+          "method": "GET",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Open-Wearables-API-Key",
+                "value": "[REDACTED]"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 10000
+          }
+        },
+        "continueOnFail": true
+      },
+      {
+        "id": "build-response",
+        "name": "Build Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1360,
+          300
+        ],
+        "parameters": {
+          "jsCode": "const bodyData = $json;\nconst sleepNode = $node['Get Sleep'].json;\nconst latestSleep = (sleepNode.data || [])[0] || {};\nconst stages = latestSleep.stages || {};\n\nreturn [{\n  json: {\n    rhr: bodyData.averaged?.resting_heart_rate_bpm || null,\n    hrv: bodyData.averaged?.avg_hrv_sdnn_ms || null,\n    recovery_score: null,\n    deep_sleep_minutes: stages.deep_minutes || null,\n    sleep_debt_minutes: null,\n    sleep_duration_minutes: latestSleep.duration_minutes || null,\n    sleep_efficiency: latestSleep.efficiency_percent || null,\n    rem_minutes: stages.rem_minutes || null,\n    light_minutes: stages.light_minutes || null,\n    sleep_date: latestSleep.date || null,\n  }\n}];\n"
+        }
+      },
+      {
+        "id": "respond",
+        "name": "Respond",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          1580,
+          300
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json) }}"
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Trigger Sync",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Trigger Sync": {
+        "main": [
+          [
+            {
+              "node": "Wait 3s",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait 3s": {
+        "main": [
+          [
+            {
+              "node": "Get Sleep",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Sleep": {
+        "main": [
+          [
+            {
+              "node": "Get Body",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Body": {
+        "main": [
+          [
+            {
+              "node": "Build Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Response": {
+        "main": [
+          [
+            {
+              "node": "Respond",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Daniel Salib",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-04-15T09:35:45.299Z",
+        "id": 144,
+        "workflowId": "oj6RP98Ca6SKZ5yA",
+        "versionId": "[REDACTED]",
+        "event": "activated",
+        "userId": "[REDACTED]"
+      },
+      {
+        "createdAt": "2026-04-15T09:35:45.281Z",
+        "id": 143,
+        "workflowId": "oj6RP98Ca6SKZ5yA",
+        "versionId": "[REDACTED]",
+        "event": "deactivated",
+        "userId": "[REDACTED]"
+      }
+    ]
+  }
+}
